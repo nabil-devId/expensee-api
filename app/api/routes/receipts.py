@@ -25,11 +25,11 @@ async def upload_receipt(
     file_content = await file.read()
     s3_url = await upload_image_to_s3(file_content, file.filename)
 
-    image_bytes = await fetch_image_from_s3(s3_url)
+    # image_bytes = await fetch_image_from_s3(s3_url)
 
     # Textract AWS
-    # receipt = await process_receipt_with_textract(s3_url)
+    receipt = await process_receipt_with_textract(s3_url)
     
-    # return receipt
+    return receipt
 
 

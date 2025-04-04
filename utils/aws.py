@@ -29,8 +29,7 @@ def get_textract_client():
 
 async def fetch_image_from_s3(s3_url: str) -> bytes:
     """Fetch an image from S3 and return the binary content"""
-    get_s3_client = get_s3_client()
-    response = get_s3_client.get_object(Bucket=settings.RECEIPT_IMAGES_BUCKET, Key=s3_url)
+    response = get_s3_client().get_object(Bucket=settings.RECEIPT_IMAGES_BUCKET, Key=s3_url)
     return response['Body'].read()
 
 async def upload_image_to_s3(file_content: bytes, filename: str) -> str:
@@ -98,18 +97,19 @@ async def process_receipt_with_textract(image_url: str) -> Dict[str, Any]:
                     'Bucket': bucket,
                     'Name': key
                 }
-            }
+            },
+            FeatureTypes=['FORMS']
         )
         # Extract relevant information
-        result = {
-            # 'raw_response': response,
-            'merchant_name': _extract_merchant_name(response),
-            'total_amount': _extract_total_amount(response),
-            'transaction_date': _extract_transaction_date(response),
-            'items': _extract_line_items(response)
-        }
+        # result = {
+        #     'raw_response': response,
+        #     'merchant_name': _extract_merchant_name(response),
+        #     'total_amount': _extract_total_amount(response),
+        #     'transaction_date': _extract_transaction_date(response),
+        #     'items': _extract_line_items(response)
+        # }
         
-        return result
+        return response
     
     except ClientError as e:
         logger.error(f"Error processing image with Textract: {str(e)}")
