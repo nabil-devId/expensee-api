@@ -7,8 +7,18 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 # Import all models to make sure they're registered with SQLAlchemy's metadata
-from app.models.user import User
-from app.models.receipt import Receipt
+import sys
+import os
+
+# Add the project root directory to the Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Now import our models
+from app.models.user import User, UserStatus
+from app.models.auth_token import AuthToken, TokenType
+from app.models.receipt import OCRResult, ReceiptStatus
+from app.models.expense_item import ExpenseItem
+from app.models.expense_history import ExpenseHistory
 from app.core.db import Base
 from app.core.config import settings
 

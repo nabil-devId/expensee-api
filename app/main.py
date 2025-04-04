@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
 import logging
 
 from app.api.routes.api import api_router
@@ -16,9 +17,23 @@ logger = logging.getLogger(__name__)
 # Create app
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    description="API for expense tracking application with receipt scanning capabilities",
+    version="1.0.0",
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    # Add security scheme for JWT Authentication
+    openapi_tags=[
+        {"name": "authentication", "description": "Authentication operations"},
+        {"name": "users", "description": "Operations with users"},
+        {"name": "receipts", "description": "Receipt processing operations"},
+        {"name": "expenses", "description": "Expense management operations"},
+    ],
+    # Add security scheme
+    swagger_ui_init_oauth={
+        "usePkceWithAuthorizationCodeGrant": True,
+        "useBasicAuthenticationWithAccessCodeGrant": True,
+    }
 )
 
 # Set up CORS middleware

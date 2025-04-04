@@ -41,7 +41,7 @@ class Settings(BaseSettings):
             return data
         
         # Construct URL using environment variables
-        db_url = f"postgresql+asyncpg://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@db:{data.get('POSTGRES_PORT') or '5432'}/{data.get('POSTGRES_DB') or 'expense_tracker'}"
+        db_url = f"postgresql+asyncpg://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_HOST')}:{data.get('POSTGRES_PORT') or '5432'}/{data.get('POSTGRES_DB') or 'expense_tracker'}"
         data['DATABASE_URL'] = db_url
         
         return data

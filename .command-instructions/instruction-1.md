@@ -9,9 +9,14 @@ This document provides comprehensive instructions for implementing an expense tr
 ## 1. System Initialization
 ### Database Configuration
 - **Database Type**: PostgreSQL
-- **Host**: [Connection string placeholder - replace with actual deployed DB address]
-- **Authentication**: [Authentication details placeholder]
-- **Environment Variables**: Required environment variables for DB connection
+- **Host**: jdbc:postgresql://localhost:5432/expensee
+- **Authentication**: 
+- user: root
+- password: Pancasila123
+- database: expensee
+- port: 5432
+- host: localhost
+- **Environment Variables**: Required environment variables for DB connection, for this, use development environment
 
 ### Database Schema
 #### Tables Structure

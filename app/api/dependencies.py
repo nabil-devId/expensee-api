@@ -10,11 +10,12 @@ from sqlalchemy.future import select
 from app.core import security
 from app.core.config import settings
 from app.core.db import get_db
-from app.models.user import User
+from app.models.user import User, UserStatus
 from schemas.token import TokenPayload
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_PREFIX}/auth/login"
+    tokenUrl=f"{settings.API_V1_PREFIX}/auth/login",
+    scheme_name="JWT"
 )
 
 
@@ -29,24 +30,49 @@ async def get_current_user(
     except (JWTError, ValidationError):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
+            detail={
+                "status": "error",
+                "error_code": "authentication_failed",
+                "message": "Could not validate credentials"
+            }
         )
     
-    result = await db.execute(select(User).where(User.id == token_data.sub))
+    result = await db.execute(select(User).where(User.user_id == token_data.sub))
     user = result.scalars().first()
     
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "status": "error",
+                "error_code": "resource_not_found",
+                "message": "User not found"
+            }
+        )
+    if user.status != UserStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "error",
+                "error_code": "authentication_failed",
+                "message": f"User account is {user.status}"
+            }
+        )
     return user
 
 
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+    if current_user.status != UserStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "error",
+                "error_code": "authentication_failed",
+                "message": f"User account is {current_user.status}"
+            }
+        )
     return current_user
 
 
@@ -55,6 +81,11 @@ def get_current_active_superuser(
 ) -> User:
     if not current_user.is_superuser:
         raise HTTPException(
-            status_code=400, detail="The user doesn't have enough privileges"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "status": "error",
+                "error_code": "authorization_failed",
+                "message": "The user doesn't have enough privileges"
+            }
         )
     return current_user

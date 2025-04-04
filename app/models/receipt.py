@@ -3,44 +3,35 @@ from datetime import datetime
 from enum import Enum as PyEnum
 
 from sqlalchemy import (Boolean, Column, DateTime, Enum, Float, ForeignKey,
-                        String, Text)
+                        String, Text, Numeric)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.core.db import Base
 
 
-class ProcessingStatus(str, PyEnum):
+class ReceiptStatus(str, PyEnum):
     PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    PROCESSED = "processed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
 
-class Receipt(Base):
-    __tablename__ = "receipts"
+class OCRResult(Base):
+    __tablename__ = "ocr_results"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    image_url = Column(String, nullable=False)
-    original_filename = Column(String, nullable=True)
+    ocr_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    image_path = Column(String, nullable=False)  # S3 path to receipt image
     merchant_name = Column(String, nullable=True)
-    total_amount = Column(Float, nullable=True)
-    currency = Column(String, default="IDR")
+    total_amount = Column(Numeric(precision=10, scale=2), nullable=True)
     transaction_date = Column(DateTime, nullable=True)
-    status = Column(Enum(ProcessingStatus), default=ProcessingStatus.PENDING)
-    raw_text = Column(Text, nullable=True)
-    extracted_data = Column(JSONB, nullable=True)
-    categories = Column(JSONB, nullable=True)
-    notes = Column(Text, nullable=True)
-    is_deleted = Column(Boolean, default=False)
+    payment_method = Column(String, nullable=True)
+    receipt_status = Column(Enum(ReceiptStatus), default=ReceiptStatus.PENDING)
+    raw_ocr_data = Column(JSONB, nullable=True)  # Original OCR response
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship("User", back_populates="receipts")
-
-
-# Add the back-reference to the User model
-from app.models.user import User
-User.receipts = relationship("Receipt", back_populates="user", cascade="all, delete-orphan")
+    user = relationship("User", backref="ocr_results")
+    expense_items = relationship("ExpenseItem", back_populates="ocr_result", cascade="all, delete-orphan")

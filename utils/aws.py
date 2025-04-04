@@ -75,41 +75,41 @@ async def process_receipt_with_textract(image_url: str) -> Dict[str, Any]:
         Dict with extracted information
     """
     try:
-        # Extract bucket and key from S3 URL
-        parts = image_url.replace('https://', '').split('.')
-        bucket = parts[0]
-        key = '.'.join(parts[3:]).split('/')[1] # what is this?
+        # For now, use dummy implementation since OCR processing will be implemented in instruction-5
+        # Just return a dummy response
+        bucket = settings.RECEIPT_IMAGES_BUCKET
+        key = image_url.split('/')[-1] if '/' in image_url else image_url
         
-        # Process with Textract
-        textract_client = get_textract_client()
-        # response = textract_client.analyze_expense(
-        #     Document={
-        #         'S3Object': {
-        #             'Bucket': bucket,
-        #             'Name': key
-        #         }
-        #     }
-        # )
-
-        response = textract_client.analyze_document(
-            Document={
-                'S3Object': {
-                    'Bucket': bucket,
-                    'Name': key
+        # For now, return a dummy response (OCR processing will be implemented in instruction-5)
+        # In a real implementation, we'd call AWS Textract here
+        
+        # Create a dummy response with mock data
+        dummy_response = {
+            'merchant_name': 'Sample Store',
+            'total_amount': 42.99,
+            'transaction_date': '2025-04-01',
+            'payment_method': 'Credit Card',
+            'items': [
+                {
+                    'name': 'Item 1',
+                    'quantity': 2,
+                    'price': 15.99,
+                    'total': 31.98
+                },
+                {
+                    'name': 'Item 2',
+                    'quantity': 1,
+                    'price': 11.01,
+                    'total': 11.01
                 }
-            },
-            FeatureTypes=['FORMS']
-        )
-        # Extract relevant information
-        # result = {
-        #     'raw_response': response,
-        #     'merchant_name': _extract_merchant_name(response),
-        #     'total_amount': _extract_total_amount(response),
-        #     'transaction_date': _extract_transaction_date(response),
-        #     'items': _extract_line_items(response)
-        # }
+            ],
+            'raw_response': {
+                'status': 'dummy',
+                'message': 'This is a placeholder for real OCR processing'
+            }
+        }
         
-        return response
+        return dummy_response
     
     except ClientError as e:
         logger.error(f"Error processing image with Textract: {str(e)}")
