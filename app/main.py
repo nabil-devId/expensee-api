@@ -6,6 +6,7 @@ import logging
 
 from app.api.routes.api import api_router
 from app.core.config import settings
+from app.core.middleware import setup_middleware
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +49,9 @@ if settings.BACKEND_CORS_ORIGINS:
 
 # Include router
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# Set up rate limiting middleware
+setup_middleware(app)
 
 
 # Health check endpoint

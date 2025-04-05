@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from app.models.auth_token import TokenType
 
 
@@ -42,3 +42,22 @@ class TokenInDB(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    status: str
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class ResetPasswordResponse(BaseModel):
+    status: str
+    message: str

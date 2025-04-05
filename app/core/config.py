@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str
     AWS_REGION: str
     RECEIPT_IMAGES_BUCKET: str
+    
+    # AWS SES Configuration
+    SES_SENDER_EMAIL: str
+    SES_SENDER_NAME: str
 
     class Config:
         case_sensitive = True

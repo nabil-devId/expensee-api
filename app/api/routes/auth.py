@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Dict
+import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -12,11 +13,14 @@ from app.core.db import get_db
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User, UserStatus
 from app.models.auth_token import AuthToken, TokenType
-from schemas.token import Token, TokenCreate, RefreshTokenRequest
+from app.models.password_reset import PasswordReset
+from app.utils.email import send_password_reset_email
+from schemas.token import Token, TokenCreate, RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse, ResetPasswordRequest, ResetPasswordResponse
 from schemas.user import User as UserSchema
 from schemas.user import UserCreate
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/login", response_model=Token)
@@ -257,3 +261,121 @@ async def logout(
     except Exception:
         # Don't raise error on logout even if something went wrong
         return {"status": "success", "message": "Successfully logged out"}
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+) -> ForgotPasswordResponse:
+    """
+    Request a password reset link
+    """
+    # Check if email exists
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalars().first()
+    
+    # Always return the same response regardless of whether the email was found
+    # This prevents email enumeration attacks
+    if not user:
+        logger.info(f"Password reset requested for non-existent email: {request.email}")
+        return ForgotPasswordResponse(
+            status="success",
+            message="If the email exists, a reset link has been sent"
+        )
+    
+    # Create a password reset token
+    token, token_record = PasswordReset.create_token(user.user_id)
+    
+    # Save token to database
+    db.add(token_record)
+    await db.commit()
+    
+    # Construct reset URL
+    # In a real app, this would be a frontend URL
+    base_url = str(req.base_url)
+    reset_url = f"{base_url}reset-password"
+    
+    # Send email with reset link
+    email_sent = await send_password_reset_email(
+        user.email,
+        token,
+        reset_url
+    )
+    
+    if not email_sent:
+        logger.error(f"Failed to send password reset email to {user.email}")
+    
+    return ForgotPasswordResponse(
+        status="success",
+        message="If the email exists, a reset link has been sent"
+    )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+async def reset_password(
+    request: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db)
+) -> ResetPasswordResponse:
+    """
+    Reset password using token from email
+    """
+    # Find token in database
+    query = select(PasswordReset).where(
+        PasswordReset.token == request.token,
+        PasswordReset.is_used == False  # noqa: E712
+    )
+    result = await db.execute(query)
+    token_record = result.scalars().first()
+    
+    if not token_record or token_record.is_expired:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "error",
+                "error_code": "validation_error",
+                "message": "Invalid or expired reset token"
+            }
+        )
+    
+    # Get the user
+    query = select(User).where(User.user_id == token_record.user_id)
+    result = await db.execute(query)
+    user = result.scalars().first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "error",
+                "error_code": "validation_error",
+                "message": "User not found"
+            }
+        )
+    
+    # Update password
+    user.password_hash = get_password_hash(request.new_password)
+    db.add(user)
+    
+    # Mark token as used
+    token_record.is_used = True
+    db.add(token_record)
+    
+    # Invalidate all refresh tokens for the user
+    query = select(AuthToken).where(
+        AuthToken.user_id == user.user_id,
+        AuthToken.type == TokenType.REFRESH
+    )
+    result = await db.execute(query)
+    refresh_tokens = result.scalars().all()
+    
+    for token in refresh_tokens:
+        await db.delete(token)
+    
+    await db.commit()
+    
+    return ResetPasswordResponse(
+        status="success",
+        message="Password has been reset successfully"
+    )
