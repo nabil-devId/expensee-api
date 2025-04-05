@@ -1,7 +1,7 @@
 """Create password reset tokens table
 
 Revision ID: 47885b54861e
-Revises: 6c5fa5c39bfa
+Revises: 778fbcd6bf37
 Create Date: 2025-04-05 08:02:16.768823
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '47885b54861e'
-down_revision: Union[str, None] = '6c5fa5c39bfa'
+down_revision: Union[str, None] = '778fbcd6bf37'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

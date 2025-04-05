@@ -33,8 +33,6 @@ class OCRResultItem(BaseModel):
     quantity: int
     unit_price: Decimal
     total_price: Decimal
-    category: Optional[str] = None
-
 
 # OCR Result Schema
 class OCRResultBase(BaseModel):
@@ -84,7 +82,8 @@ class AcceptOCRRequest(BaseModel):
     total_amount: Optional[Decimal] = None
     transaction_date: Optional[datetime] = None
     payment_method: Optional[str] = None
-    category: str
+    category_id: Optional[UUID]
+    user_category_id: Optional[UUID]
     items: List[OCRResultItem]
     notes: Optional[str] = None
 
@@ -102,7 +101,6 @@ class ExpenseItemBase(BaseModel):
     quantity: int
     unit_price: Decimal
     total_price: Decimal
-    category: Optional[str] = None
 
 
 class ExpenseItemCreate(ExpenseItemBase):

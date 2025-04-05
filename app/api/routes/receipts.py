@@ -16,6 +16,7 @@ from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
 from app.models.user import User
 from app.models.receipt import OCRResult, ReceiptStatus
+from app.models.category import Category, UserCategory
 from app.models.expense_history import ExpenseHistory
 from app.models.expense_item import ExpenseItem
 
@@ -97,7 +98,8 @@ async def upload_receipt(
                         name=item_data.get('name', 'Unknown Item'),
                         quantity=item_data.get('quantity', 1),
                         unit_price=item_data.get('price', 0),
-                        total_price=item_data.get('total', item_data.get('price', 0) * item_data.get('quantity', 1))
+                        total_price=item_data.get('total', item_data.get('price', 0) * item_data.get('quantity', 1)),
+                        user_id=current_user.user_id,
                     )
                     db.add(expense_item)
                 
@@ -227,7 +229,6 @@ async def get_receipt_ocr_results(
                 quantity=item.quantity,
                 unit_price=item.unit_price,
                 total_price=item.total_price,
-                category=item.category
             )
             for item in expense_items
         ]
@@ -271,13 +272,34 @@ async def accept_ocr_results(
 ) -> AcceptOCRResponse:
     """Accept OCR results and create an expense record"""
     try:
+
+        # Verify category
+
+        if not request.category_id and not request.user_category_id: 
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "category_not_specified",
+                    "message": "Category not specified"
+                }
+            )
         # Verify OCR record exists and belongs to user
         query = select(OCRResult).where(
             OCRResult.ocr_id == ocr_id,
             OCRResult.user_id == current_user.user_id
         )
         result = await db.execute(query)
-        ocr_result = result.scalars().first()
+        ocr_result = result.scalar_one()
+        if ocr_result.receipt_status == ReceiptStatus.ACCEPTED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "ocr_result_has_been_accepted",
+                    "message": "OCR result has been accepted"
+                }
+            )
         
         if not ocr_result:
             raise HTTPException(
@@ -295,7 +317,33 @@ async def accept_ocr_results(
         ocr_result.total_amount = request.total_amount or ocr_result.total_amount
         ocr_result.transaction_date = request.transaction_date or ocr_result.transaction_date
         ocr_result.payment_method = request.payment_method or ocr_result.payment_method
-        
+
+        if request.category_id:
+            fetchCategoryQuery = select(Category).where(
+                Category.category_id == request.category_id
+            )
+            category = await db.execute(fetchCategoryQuery)
+        else:
+            category = None
+
+        if request.user_category_id:
+            fetchUserCategoryQuery = select(UserCategory).where(
+                UserCategory.user_category_id == request.user_category_id
+            )
+            userCategory = await db.execute(fetchUserCategoryQuery)
+        else:
+            userCategory = None
+
+        if not category and not userCategory:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "category_not_found",
+                    "message": "Category not found"
+                }
+            )
+    
         # Create expense history record
         expense_history = ExpenseHistory(
             user_id=current_user.user_id,
@@ -304,7 +352,8 @@ async def accept_ocr_results(
             total_amount=request.total_amount or ocr_result.total_amount or 0,
             transaction_date=request.transaction_date or ocr_result.transaction_date or datetime.utcnow(),
             payment_method=request.payment_method or ocr_result.payment_method,
-            category=request.category,
+            category_id=request.category_id if request.category_id else None,
+            user_category_id=request.user_category_id if request.user_category_id else None,
             notes=request.notes,
             is_manual_entry=False
         )
@@ -329,7 +378,7 @@ async def accept_ocr_results(
                 quantity=item.quantity,
                 unit_price=item.unit_price,
                 total_price=item.total_price,
-                category=item.category or request.category  # Use item category or default to expense category
+                # category=item.category or request.category  # Use item category or default to expense category
             )
             db.add(expense_item)
         

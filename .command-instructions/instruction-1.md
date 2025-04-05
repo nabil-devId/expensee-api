@@ -140,7 +140,6 @@ This document provides comprehensive instructions for implementing an expense tr
         "quantity": "number",
         "unit_price": "decimal",
         "total_price": "decimal",
-        "category": "string"
       }
     ],
     "confidence_score": "decimal",
@@ -159,7 +158,8 @@ This document provides comprehensive instructions for implementing an expense tr
     "total_amount": "decimal" (optional, override),
     "transaction_date": "ISO8601 timestamp" (optional, override),
     "payment_method": "string" (optional, override),
-    "category": "string" (required),
+    "category_id": "uuid" (one of category must be filled),
+    "user_category_id": "uuid" (required),
     "items": [
       {
         "item_id": "uuid" (if editing existing),
@@ -167,7 +167,6 @@ This document provides comprehensive instructions for implementing an expense tr
         "quantity": "number",
         "unit_price": "decimal",
         "total_price": "decimal",
-        "category": "string"
       }
     ],
     "notes": "string" (optional)
@@ -197,7 +196,7 @@ This document provides comprehensive instructions for implementing an expense tr
 - **Query Parameters**:
   - `from_date`: ISO8601 date (optional)
   - `to_date`: ISO8601 date (optional)
-  - `category`: string (optional)
+  - `category`: uuid (optional, bot user_categories and categories)
   - `merchant`: string (optional)
   - `min_amount`: decimal (optional)
   - `max_amount`: decimal (optional)
@@ -262,7 +261,6 @@ This document provides comprehensive instructions for implementing an expense tr
         "quantity": "number",
         "unit_price": "decimal",
         "total_price": "decimal",
-        "category": "string"
       }
     ],
     "created_at": "ISO8601 timestamp",

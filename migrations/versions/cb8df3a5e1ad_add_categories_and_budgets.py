@@ -66,15 +66,10 @@ def upgrade():
 
     # Add columns to expense_items table
     op.add_column('expense_items', sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column('expense_items', sa.Column('category_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column('expense_items', sa.Column('user_category_id', postgresql.UUID(as_uuid=True), nullable=True))
     op.add_column('expense_items', sa.Column('purchase_date', sa.Date(), nullable=True))
-    op.add_column('expense_items', sa.Column('amount', sa.Numeric(precision=10, scale=2), nullable=True))
     
     # Create foreign key constraints for expense_items
     op.create_foreign_key('fk_expense_items_user_id', 'expense_items', 'users', ['user_id'], ['user_id'])
-    op.create_foreign_key('fk_expense_items_category_id', 'expense_items', 'categories', ['category_id'], ['category_id'])
-    op.create_foreign_key('fk_expense_items_user_category_id', 'expense_items', 'user_categories', ['user_category_id'], ['user_category_id'])
 
     # Add default categories
     op.execute("""
@@ -97,15 +92,10 @@ def upgrade():
 
 def downgrade():
     # Drop foreign key constraints
-    op.drop_constraint('fk_expense_items_user_category_id', 'expense_items', type_='foreignkey')
-    op.drop_constraint('fk_expense_items_category_id', 'expense_items', type_='foreignkey')
     op.drop_constraint('fk_expense_items_user_id', 'expense_items', type_='foreignkey')
     
     # Drop added columns from expense_items
-    op.drop_column('expense_items', 'amount')
     op.drop_column('expense_items', 'purchase_date')
-    op.drop_column('expense_items', 'user_category_id')
-    op.drop_column('expense_items', 'category_id')
     op.drop_column('expense_items', 'user_id')
     
     # Drop tables

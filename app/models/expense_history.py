@@ -18,7 +18,8 @@ class ExpenseHistory(Base):
     total_amount = Column(Numeric(precision=10, scale=2), nullable=False)
     transaction_date = Column(DateTime, nullable=False)
     payment_method = Column(String, nullable=True)
-    category = Column(String, nullable=False)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
+    user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -27,3 +28,5 @@ class ExpenseHistory(Base):
     # Relationships
     user = relationship("User", backref="expenses")
     ocr_result = relationship("OCRResult", backref="expense")
+    category = relationship("Category", foreign_keys=[category_id])
+    user_category = relationship("UserCategory", foreign_keys=[user_category_id])

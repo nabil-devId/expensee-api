@@ -16,10 +16,8 @@ class ExpenseItem(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
     name = Column(String, nullable=False)
     quantity = Column(Integer, default=1)
-    unit_price = Column(Numeric(precision=10, scale=2), nullable=False)
-    amount = Column(Numeric(precision=10, scale=2), nullable=False)  # Same as total_price
-    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
-    user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
+    unit_price = Column(Numeric(precision=10, scale=2), nullable=False) # For what? this will be same as total_price for now, we will remove for later
+    total_price = Column(Numeric(precision=10, scale=2), nullable=False)
     purchase_date = Column(Date, nullable=False, default=datetime.utcnow().date)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -27,5 +25,3 @@ class ExpenseItem(Base):
     # Relationships
     ocr_result = relationship("OCRResult", back_populates="expense_items")
     user = relationship("User", back_populates="expense_items")
-    category = relationship("Category", foreign_keys=[category_id])
-    user_category = relationship("UserCategory", foreign_keys=[user_category_id])

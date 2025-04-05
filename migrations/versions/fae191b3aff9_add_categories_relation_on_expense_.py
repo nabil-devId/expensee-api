@@ -28,7 +28,8 @@ def upgrade() -> None:
         batch_op.alter_column('category', 
                               new_column_name='category_id',
                               type_=postgresql.UUID(as_uuid=True),
-                              postgresql_using='category::uuid')
+                              postgresql_using='category::uuid',
+                              nullable=True)
     op.add_column('expense_history',
                   sa.Column('user_category_id', postgresql.UUID(as_uuid=True), nullable=True))
     op.create_foreign_key('fk_expense_history_category_id', 

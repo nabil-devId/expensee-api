@@ -14,6 +14,8 @@ from app.models.user import User
 from app.models.receipt import OCRResult
 from app.models.expense_history import ExpenseHistory
 from app.models.expense_item import ExpenseItem
+from app.models.category import Category
+from app.models.category import UserCategory
 
 from schemas.receipt import (
     ExpenseHistoryResponse, ExpenseHistoryDetails, ExpenseHistoryListResponse,
@@ -78,8 +80,10 @@ async def get_expense_history(
             
         # Get paginated expenses
         query = (
-            select(ExpenseHistory, OCRResult.image_path)
+            select(ExpenseHistory, OCRResult.image_path, Category.name.label("category_name"), UserCategory.name.label("user_category_name"))
             .outerjoin(OCRResult, ExpenseHistory.ocr_id == OCRResult.ocr_id)
+            .outerjoin(Category, Category.category_id == ExpenseHistory.category_id)
+            .outerjoin(UserCategory, UserCategory.user_category_id == ExpenseHistory.user_category_id)
             .where(and_(*query_filters))
             .order_by(sort_column)
             .offset((page - 1) * limit)
@@ -91,21 +95,20 @@ async def get_expense_history(
         
         # Format response
         expenses = []
-        for expense, image_path in expense_records:
+        for expense, image_path, category_name, user_category_name in expense_records:
             expenses.append(
                 ExpenseHistoryResponse(
                     expense_id=expense.expense_id,
                     merchant_name=expense.merchant_name,
                     total_amount=expense.total_amount,
                     transaction_date=expense.transaction_date,
-                    category=expense.category,
+                    category=category_name if category_name else user_category_name,
                     payment_method=expense.payment_method,
                     notes=expense.notes,
                     has_receipt_image=image_path is not None,
                     created_at=expense.created_at
                 )
             )
-            
         # Calculate pagination info
         total_pages = (total_count + limit - 1) // limit  # Ceiling division
         pagination = PaginationInfo(
@@ -127,17 +130,28 @@ async def get_expense_history(
         summary_record = result.one()
         
         # Get expense by category
-        category_query = select(
-            ExpenseHistory.category,
-            func.sum(ExpenseHistory.total_amount).label("amount")
-        ).where(and_(*query_filters)).group_by(ExpenseHistory.category)
+        category_query = (
+            select(
+                Category.name.label("category_name"), 
+                UserCategory.name.label("user_category_name"), 
+                func.sum(ExpenseHistory.total_amount).label("amount")
+            )
+            .select_from(ExpenseHistory)
+            .outerjoin(Category, Category.category_id == ExpenseHistory.category_id)
+            .outerjoin(UserCategory, UserCategory.user_category_id == ExpenseHistory.user_category_id)
+            .where(and_(*query_filters))
+            .group_by(
+                Category.name,
+                UserCategory.name
+            )
+        )
         
         result = await db.execute(category_query)
         category_records = result.all()
         
         expense_by_category = {
-            category: amount
-            for category, amount in category_records
+            (category_name or user_category_name or "Uncategorized"): amount
+            for category_name, user_category_name, amount in category_records
         }
         
         # Create summary object with defaults for empty results
@@ -177,8 +191,10 @@ async def get_expense_detail(
     try:
         # Get expense record
         query = (
-            select(ExpenseHistory, OCRResult.image_path)
+            select(ExpenseHistory, OCRResult.image_path, Category.name.label("category_name"), UserCategory.name.label("user_category_name"))
             .outerjoin(OCRResult, ExpenseHistory.ocr_id == OCRResult.ocr_id)
+            .outerjoin(Category, ExpenseHistory.category_id == Category.category_id)
+            .outerjoin(UserCategory, ExpenseHistory.user_category_id == UserCategory.user_category_id)
             .where(
                 ExpenseHistory.expense_id == expense_id,
                 ExpenseHistory.user_id == current_user.user_id
@@ -198,7 +214,7 @@ async def get_expense_detail(
                 }
             )
             
-        expense, image_url = expense_record
+        expense, image_url, category_name, user_category_name = expense_record
         
         # Get expense items if they exist
         items = []
@@ -213,7 +229,7 @@ async def get_expense_detail(
                     quantity=item.quantity,
                     unit_price=item.unit_price,
                     total_price=item.total_price,
-                    category=item.category
+                    # category=item.category
                 )
                 for item in expense_items
             ]
@@ -225,7 +241,7 @@ async def get_expense_detail(
             total_amount=expense.total_amount,
             transaction_date=expense.transaction_date,
             payment_method=expense.payment_method,
-            category=expense.category,
+            category=category_name or user_category_name,
             notes=expense.notes,
             receipt_image_url=image_url,
             items=items,
