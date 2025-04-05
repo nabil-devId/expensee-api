@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, DateTime, String, ForeignKey
+from sqlalchemy import Column, DateTime, String, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -16,7 +16,7 @@ class PasswordReset(Base):
     token = Column(String, nullable=False, index=True, unique=True)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    is_used = Column(String, default=False)  # Track if token has been used
+    is_used = Column(Boolean, default=False)  # Track if token has been used
 
     # Relationships
     user = relationship("User", backref="password_reset_tokens")

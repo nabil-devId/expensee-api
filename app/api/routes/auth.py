@@ -295,7 +295,8 @@ async def forgot_password(
     # Construct reset URL
     # In a real app, this would be a frontend URL
     base_url = str(req.base_url)
-    reset_url = f"{base_url}reset-password"
+    # Use the correct API path with prefix
+    reset_url = f"{base_url}{settings.API_V1_PREFIX.lstrip('/')}/auth/reset-password"
     
     # Send email with reset link
     email_sent = await send_password_reset_email(
@@ -311,6 +312,39 @@ async def forgot_password(
         status="success",
         message="If the email exists, a reset link has been sent"
     )
+
+
+@router.get("/reset-password")
+async def get_reset_password(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Handle the initial reset password request from email link
+    This endpoint verifies the token and redirects to the frontend reset page
+    """
+    # Find token in database
+    query = select(PasswordReset).where(
+        PasswordReset.token == token,
+        PasswordReset.is_used == False  # noqa: E712
+    )
+    result = await db.execute(query)
+    token_record = result.scalars().first()
+    
+    if not token_record or token_record.is_expired:
+        # In a real app, redirect to an error page
+        return {
+            "status": "error",
+            "message": "Invalid or expired reset token"
+        }
+    
+    # In a real app, this would redirect to a frontend page where the user can enter a new password
+    # For now, we'll just return a success message with instructions
+    return {
+        "status": "success",
+        "message": "Token is valid. Please use the POST endpoint with your new password to complete the reset.",
+        "token": token
+    }
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
