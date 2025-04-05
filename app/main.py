@@ -29,6 +29,8 @@ app = FastAPI(
         {"name": "users", "description": "Operations with users"},
         {"name": "receipts", "description": "Receipt processing operations"},
         {"name": "expenses", "description": "Expense management operations"},
+        {"name": "categories", "description": "Category management operations"},
+        {"name": "budgets", "description": "Budget management operations"},
     ],
     # Add security scheme
     swagger_ui_init_oauth={

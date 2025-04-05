@@ -27,3 +27,8 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
     status = Column(Enum(UserStatus), default=UserStatus.ACTIVE)
     is_superuser = Column(Boolean, default=False)  # Keep this for admin functionality
+    
+    # Relationships
+    custom_categories = relationship("UserCategory", back_populates="user")
+    budgets = relationship("Budget", back_populates="user")
+    expense_items = relationship("ExpenseItem", back_populates="user")

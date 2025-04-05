@@ -26,6 +26,10 @@ class TokenCreate(BaseModel):
     device_info: Optional[str] = None
 
 
+class TokenData(BaseModel):
+    user_id: UUID = None
+
+
 class TokenInDB(BaseModel):
     token_id: UUID
     user_id: UUID
