@@ -9,7 +9,7 @@ import calendar
 
 from app.core.db import get_db
 from app.api.dependencies import get_current_user
-from app.models import User, Budget, Category, UserCategory, ExpenseItem
+from app.models import User, Budget, Category, UserCategory, ExpenseItem, ExpenseHistory
 from schemas.budget import (
     BudgetCreate, BudgetResponse, BudgetUpdateResponse, 
     BudgetListResponse, BudgetProgressResponse, BudgetDeleteResponse,
@@ -79,26 +79,26 @@ async def get_budget_with_spending(db: AsyncSession, budget: Budget, start_date:
     """
     # Base query for expenses in the period
     query = (
-        select(func.sum(ExpenseItem.amount))
+        select(func.sum(ExpenseHistory.total_amount))
         .where(
-            ExpenseItem.user_id == budget.user_id,
-            ExpenseItem.purchase_date >= start_date,
-            ExpenseItem.purchase_date <= end_date
+            ExpenseHistory.user_id == budget.user_id,
+            ExpenseHistory.transaction_date >= start_date,
+            ExpenseHistory.transaction_date <= end_date
         )
     )
     
     # Add category filter if this is a category budget
     if budget.category_id:
-        query = query.where(ExpenseItem.category_id == budget.category_id)
+        query = query.where(ExpenseHistory.category_id == budget.category_id)
     elif budget.user_category_id:
-        query = query.where(ExpenseItem.user_category_id == budget.user_category_id)
+        query = query.where(ExpenseHistory.user_category_id == budget.user_category_id)
     
     result = await db.execute(query)
     spending = result.scalar_one_or_none() or 0
     
     # Calculate remaining and percentage
     remaining = float(budget.amount) - float(spending)
-    percentage_used = (float(spending) / float(budget.amount)) * 100 if float(budget.amount) > 0 else 0
+    percentage_used = round((float(spending) / float(budget.amount)) * 100, 2) if float(budget.amount) > 0 else 0
     
     # Get category info if applicable
     category_info = None
@@ -134,7 +134,7 @@ async def get_overall_budget_spending(db: AsyncSession, user_id: UUID, start_dat
     """
     # Get total spending in the period
     query = (
-        select(func.sum(ExpenseItem.amount))
+        select(func.sum(ExpenseItem.total_price))
         .where(
             ExpenseItem.user_id == user_id,
             ExpenseItem.purchase_date >= start_date,
@@ -460,25 +460,25 @@ async def get_budget_progress(
             
         # Calculate spending for this category
         query = (
-            select(func.sum(ExpenseItem.amount))
+            select(func.sum(ExpenseHistory.total_amount))
             .where(
-                ExpenseItem.user_id == current_user.user_id,
-                ExpenseItem.purchase_date >= start_date,
-                ExpenseItem.purchase_date <= end_date
+                ExpenseHistory.user_id == current_user.user_id,
+                ExpenseHistory.transaction_date >= start_date,
+                ExpenseHistory.transaction_date <= end_date
             )
         )
         
         if budget.category_id:
-            query = query.where(ExpenseItem.category_id == budget.category_id)
+            query = query.where(ExpenseHistory.category_id == budget.category_id)
         elif budget.user_category_id:
-            query = query.where(ExpenseItem.user_category_id == budget.user_category_id)
+            query = query.where(ExpenseHistory.user_category_id == budget.user_category_id)
         
         result = await db.execute(query)
         spending = result.scalar_one_or_none() or 0
         
         # Calculate metrics
         remaining = float(budget.amount) - float(spending)
-        percentage_used = (float(spending) / float(budget.amount)) * 100 if float(budget.amount) > 0 else 0
+        percentage_used = round((float(spending) / float(budget.amount)) * 100, 2) if float(budget.amount) > 0 else 0
         
         # Determine status
         status = BudgetStatus.UNDER_BUDGET
