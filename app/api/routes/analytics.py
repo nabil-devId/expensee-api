@@ -136,19 +136,26 @@ async def get_expense_trends(
         if period == PeriodType.WEEKLY:
             # Group by week
             # We'll extract the date, week, and then group by the week
-            query = (
+            sub_query = (
                 select(
                     func.date_trunc('week', ExpenseHistory.transaction_date).label('period_start'),
-                    func.sum(ExpenseHistory.total_amount).label('amount'),
-                    func.count().label('count')
+                    ExpenseHistory.total_amount
                 )
+                .select_from(ExpenseHistory)
                 .where(and_(*query_filters))
-                .group_by(func.date_trunc('week', ExpenseHistory.transaction_date))
-                .order_by(func.date_trunc('week', ExpenseHistory.transaction_date))
+                .subquery()
+            )
+            query = (
+                select(
+                    sub_query.c.period_start,
+                    func.sum(sub_query.c.total_amount).label('amount'),
+                    func.count()
+                )
+                .group_by(sub_query.c.period_start)
+                .order_by(sub_query.c.period_start)
             )
         elif period == PeriodType.MONTHLY:
             # Group by month
-
             sub_query = (
                 select(
                     func.date_trunc('month', ExpenseHistory.transaction_date).label('period_start'),
@@ -169,15 +176,23 @@ async def get_expense_trends(
             )
         else:  # YEARLY
             # Group by year
-            query = (
+            sub_query = (
                 select(
                     func.date_trunc('year', ExpenseHistory.transaction_date).label('period_start'),
-                    func.sum(ExpenseHistory.total_amount).label('amount'),
-                    func.count().label('count')
+                    ExpenseHistory.total_amount
                 )
+                .select_from(ExpenseHistory)
                 .where(and_(*query_filters))
-                .group_by(func.date_trunc('year', ExpenseHistory.transaction_date))
-                .order_by(func.date_trunc('year', ExpenseHistory.transaction_date))
+                .subquery()
+            )
+            query = (
+                select(
+                    sub_query.c.period_start,
+                    func.sum(sub_query.c.total_amount).label('amount'),
+                    func.count()
+                )
+                .group_by(sub_query.c.period_start)
+                .order_by(sub_query.c.period_start)
             )
         
         # Execute the query
@@ -335,7 +350,7 @@ async def get_category_distribution(
         
         # Process system categories
         for cat_id, name, icon, color, amount, count in sys_category_records:
-            percentage = (amount / total_amount) * Decimal("100.0") if total_amount > 0 else Decimal("0.0")
+            percentage = round((amount / total_amount) * Decimal("100.0"), 2) if total_amount > 0 else Decimal("0.0")
             
             categories.append(
                 CategoryDistributionItem(
@@ -353,7 +368,7 @@ async def get_category_distribution(
         
         # Process user categories
         for cat_id, name, icon, color, amount, count in user_category_records:
-            percentage = (amount / total_amount) * Decimal("100.0") if total_amount > 0 else Decimal("0.0")
+            percentage = round((amount / total_amount) * Decimal("100.0"), 2) if total_amount > 0 else Decimal("0.0")
             
             categories.append(
                 CategoryDistributionItem(
@@ -373,7 +388,7 @@ async def get_category_distribution(
         if uncategorized_record and uncategorized_record.amount:
             amount, count = uncategorized_record
             if amount:
-                percentage = (amount / total_amount) * Decimal("100.0") if total_amount > 0 else Decimal("0.0")
+                percentage = round((amount / total_amount) * Decimal("100.0"), 2) if total_amount > 0 else Decimal("0.0")
                 
                 categories.append(
                     CategoryDistributionItem(

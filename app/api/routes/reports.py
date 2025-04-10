@@ -259,7 +259,7 @@ async def generate_monthly_report(
         summary = MonthlySummary(
             total_expenses=total,
             total_transactions=count,
-            avg_transaction=avg,
+            avg_transaction=round(avg, 2),
             largest_expense=largest_expense
         )
         
@@ -267,29 +267,45 @@ async def generate_monthly_report(
         sys_cat_alias = aliased(Category)
         user_cat_alias = aliased(UserCategory)
         
-        category_query = (
+        # Create aliased expressions for reuse in both SELECT and GROUP BY
+        cat_id_expr = func.coalesce(sys_cat_alias.category_id, user_cat_alias.user_category_id).label('cat_id')
+        name_expr = func.coalesce(sys_cat_alias.name, user_cat_alias.name, 'Uncategorized').label('name')
+        icon_expr = func.coalesce(sys_cat_alias.icon, user_cat_alias.icon, 'default_icon').label('icon')
+        color_expr = func.coalesce(sys_cat_alias.color, user_cat_alias.color, '#CCCCCC').label('color')
+        
+        # Fixed case statement - updated to use the new syntax
+        is_system_category_case = case(
+            (ExpenseHistory.category_id.isnot(None), True),
+            else_=False
+        ).label('is_system_category')
+        
+        # Create a subquery to handle the GROUP BY operations
+        subquery = (
             select(
-                func.coalesce(sys_cat_alias.category_id, user_cat_alias.user_category_id).label('cat_id'),
-                func.coalesce(sys_cat_alias.name, user_cat_alias.name, 'Uncategorized').label('name'),
-                func.coalesce(sys_cat_alias.icon, user_cat_alias.icon).label('icon'),
-                func.coalesce(sys_cat_alias.color, user_cat_alias.color).label('color'),
+                cat_id_expr,
+                name_expr,
+                icon_expr,
+                color_expr,
                 func.sum(ExpenseHistory.total_amount).label('amount'),
-                case(
-                    [(ExpenseHistory.category_id.isnot(None), True)],
-                    else_=False
-                ).label('is_system_category')
+                is_system_category_case
             )
             .select_from(ExpenseHistory)
             .outerjoin(sys_cat_alias, ExpenseHistory.category_id == sys_cat_alias.category_id)
             .outerjoin(user_cat_alias, ExpenseHistory.user_category_id == user_cat_alias.user_category_id)
             .where(and_(*query_filters))
             .group_by(
-                func.coalesce(sys_cat_alias.category_id, user_cat_alias.user_category_id),
-                func.coalesce(sys_cat_alias.name, user_cat_alias.name, 'Uncategorized'),
-                func.coalesce(sys_cat_alias.icon, user_cat_alias.icon),
-                func.coalesce(sys_cat_alias.color, user_cat_alias.color),
-                'is_system_category'
+                cat_id_expr,
+                name_expr,
+                icon_expr,
+                color_expr,
+                is_system_category_case
             )
+            .alias('category_summary')
+        )
+        
+        # Final query
+        category_query = (
+            select(subquery)
             .order_by(desc('amount'))
         )
         
@@ -364,7 +380,7 @@ async def generate_monthly_report(
                         color=color
                     ),
                     amount=amount,
-                    percentage=percentage,
+                    percentage=round(percentage, 2),
                     budget=budget_info
                 )
             )
@@ -762,7 +778,7 @@ async def generate_custom_report(
             summary=ReportSummary(
                 total_expenses=total,
                 total_transactions=count,
-                avg_transaction=avg,
+                avg_transaction=round(avg, 2),
                 period_days=days_in_period,
                 avg_daily_expense=avg_daily
             ),
