@@ -34,7 +34,7 @@ migrate: venv ## Apply migrations
 	$(INVENV) PYTHONPATH=. alembic upgrade head
 
 dev: venv db migrate ## Start development server with hot reload
-	$(INVENV) uvicorn app.main:app --reload --host 0.0.0.0 --port 5001
+	$(INVENV) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 clean: ## Remove virtual environment and cached files
 	rm -rf $(VENV_NAME)

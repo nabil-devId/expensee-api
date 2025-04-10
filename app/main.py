@@ -23,6 +23,10 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    # Add base URL to the OpenAPI schema
+    servers=[
+        {"url": settings.SERVER_HOST or "/", "description": "Default server"}
+    ],
     # Add security scheme for JWT Authentication
     openapi_tags=[
         {"name": "authentication", "description": "Authentication operations"},
@@ -31,11 +35,17 @@ app = FastAPI(
         {"name": "expenses", "description": "Expense management operations"},
         {"name": "categories", "description": "Category management operations"},
         {"name": "budgets", "description": "Budget management operations"},
+        {"name": "analytics", "description": "Analytics and data visualization operations"},
+        {"name": "reports", "description": "Report generation operations"},
+        {"name": "exports", "description": "Data export operations"},
     ],
     # Add security scheme
     swagger_ui_init_oauth={
         "usePkceWithAuthorizationCodeGrant": True,
         "useBasicAuthenticationWithAccessCodeGrant": True,
+        "clientId": "",
+        "clientSecret": "",
+        "tokenUrl": f"{settings.API_V1_PREFIX}/auth/login",
     }
 )
 

@@ -20,7 +20,12 @@ pydantic-settings>=2.0.0
 email-validator>=2.0.0
 boto3>=1.28.0
 
-
+# Data processing and export dependencies
+pandas>=2.0.0
+openpyxl>=3.1.2
+xlsxwriter>=3.1.0
+matplotlib>=3.7.1
+reportlab>=4.0.4
 
 # Tesseract OCR dependencies
 pytesseract>=0.3.10

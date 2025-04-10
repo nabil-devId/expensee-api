@@ -5,3 +5,6 @@ from app.api.routes.receipts import router as receipts_router
 from app.api.routes.expenses import router as expenses_router
 from app.api.routes.categories import router as categories_router
 from app.api.routes.budgets import router as budgets_router
+from app.api.routes.analytics import router as analytics_router
+from app.api.routes.reports import router as reports_router
+from app.api.routes.exports import router as exports_router

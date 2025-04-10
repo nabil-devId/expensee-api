@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     # BACKEND_CORS_ORIGINS is a comma-separated list of origins
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    # Server host for OpenAPI schema (for Swagger and client imports)
+    SERVER_HOST: Optional[str] = None
 
     # Tesseract configuration
     TESSERACT_CMD: str = "/usr/bin/tesseract"
