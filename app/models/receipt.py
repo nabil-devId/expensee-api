@@ -35,3 +35,34 @@ class OCRResult(Base):
     # Relationships
     user = relationship("User", backref="ocr_results")
     expense_items = relationship("ExpenseItem", back_populates="ocr_result", cascade="all, delete-orphan")
+    confidence_scores = relationship("OCRConfidence", back_populates="ocr_result", cascade="all, delete-orphan")
+    training_feedback = relationship("OCRTrainingFeedback", back_populates="ocr_result", cascade="all, delete-orphan")
+
+
+class OCRConfidence(Base):
+    __tablename__ = "ocr_confidence"
+
+    ocr_confidence_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ocr_id = Column(UUID(as_uuid=True), ForeignKey("ocr_results.ocr_id"), nullable=False)
+    field_name = Column(String, nullable=False)  # e.g., 'merchant_name', 'total_amount', 'date'
+    confidence_score = Column(Numeric(precision=3, scale=2), nullable=False)  # from 0.0 to 1.0
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    ocr_result = relationship("OCRResult", back_populates="confidence_scores")
+
+
+class OCRTrainingFeedback(Base):
+    __tablename__ = "ocr_training_feedback"
+
+    feedback_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ocr_id = Column(UUID(as_uuid=True), ForeignKey("ocr_results.ocr_id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    field_name = Column(String, nullable=False)
+    original_value = Column(String, nullable=False)
+    corrected_value = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    ocr_result = relationship("OCRResult", back_populates="training_feedback")
+    user = relationship("User", backref="training_feedback")

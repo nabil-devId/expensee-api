@@ -68,10 +68,47 @@ class OCRResultInDB(OCRResultBase):
         from_attributes = True
 
 
+# OCR Confidence Schema
+class OCRConfidenceBase(BaseModel):
+    field_name: str
+    confidence_score: Decimal
+
+
+class OCRConfidenceCreate(OCRConfidenceBase):
+    ocr_id: UUID
+
+
+class OCRConfidenceInDB(OCRConfidenceBase):
+    ocr_confidence_id: UUID
+    ocr_id: UUID
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+
+# OCR Training Feedback Schema
+class OCRFeedbackCorrection(BaseModel):
+    field_name: str
+    original_value: str
+    corrected_value: str
+
+
+class OCRFeedbackRequest(BaseModel):
+    corrections: List[OCRFeedbackCorrection]
+
+
+class OCRFeedbackResponse(BaseModel):
+    status: str
+    message: str
+    feedback_id: UUID
+
+
 class OCRResultResponse(OCRResultBase):
     ocr_id: UUID
     items: List[OCRResultItem] = []
-    confidence_score: Optional[Decimal] = None
+    confidence_scores: Optional[List[OCRConfidenceBase]] = None
     image_url: str
     receipt_status: ReceiptStatus
 

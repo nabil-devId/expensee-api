@@ -2,12 +2,12 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
-from utils.aws import process_receipt_with_textract, upload_image_to_s3
+from utils.aws import process_receipt_with_textract, upload_image_to_s3, calculate_ocr_completion_time, fetch_image_from_s3
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, status, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, status, Path, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, desc, asc
@@ -15,7 +15,7 @@ from sqlalchemy import func, desc, asc
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
 from app.models.user import User
-from app.models.receipt import OCRResult, ReceiptStatus
+from app.models.receipt import OCRResult, ReceiptStatus, OCRConfidence, OCRTrainingFeedback
 from app.models.category import Category, UserCategory
 from app.models.expense_history import ExpenseHistory
 from app.models.expense_item import ExpenseItem
@@ -25,7 +25,8 @@ from schemas.receipt import (
     OCRResultCreate, OCRResultResponse, OCRResultItem, OCRResultInDB,
     AcceptOCRRequest, AcceptOCRResponse, ExpenseHistoryCreate,
     ExpenseItemCreate, ExpenseHistoryResponse, ExpenseHistoryDetails,
-    ExpenseHistoryListResponse, PaginationInfo, ExpenseSummary, ErrorResponse
+    ExpenseHistoryListResponse, PaginationInfo, ExpenseSummary, ErrorResponse,
+    OCRConfidenceBase, OCRFeedbackRequest, OCRFeedbackResponse
 )
 
 router = APIRouter()
@@ -56,9 +57,22 @@ async def upload_receipt(
         
         # 2. Process the file
         file_content = await file.read()
+        
+        # 3. Calculate estimated completion time based on image characteristics
+        try:
+            estimated_time = await calculate_ocr_completion_time(file_content)
+            # Ensure we have a valid integer even if something went wrong
+            if estimated_time is None or not isinstance(estimated_time, int) or estimated_time <= 0:
+                estimated_time = 10  # Default fallback
+        except Exception as est_error:
+            logger.error(f"Error calculating estimate time: {str(est_error)}")
+            estimated_time = 10  # Default fallback
+        
+        print(f"Estimated time: {estimated_time} || 1")
+        # 4. Upload to S3
         s3_url = await upload_image_to_s3(file_content, file.filename)
         
-        # 3. Create entry in ocr_results table
+        # 5. Create entry in ocr_results table
         ocr_id = uuid.uuid4()
         ocr_result = OCRResult(
             ocr_id=ocr_id,
@@ -71,7 +85,7 @@ async def upload_receipt(
         await db.commit()
         await db.refresh(ocr_result)
         
-        # 4. Trigger OCR processing job (asynchronous)
+        # 6. Trigger OCR processing job (asynchronous)
         # Note: In a real implementation, this would be a background task or queue job
         # For now, we'll implement a simple synchronous processing to simulate the flow
         try:
@@ -102,6 +116,16 @@ async def upload_receipt(
                         user_id=current_user.user_id,
                     )
                     db.add(expense_item)
+            
+            # Store confidence scores
+            if ocr_data.get('confidence_scores'):
+                for field_name, confidence_score in ocr_data.get('confidence_scores').items():
+                    ocr_confidence = OCRConfidence(
+                        ocr_id=ocr_id,
+                        field_name=field_name,
+                        confidence_score=confidence_score
+                    )
+                    db.add(ocr_confidence)
                 
                 await db.commit()
         except Exception as e:
@@ -117,11 +141,12 @@ async def upload_receipt(
                 estimated_completion_time=None
             )
         else:
+            # Ensure estimated_time is never null
             return ReceiptUploadResponse(
                 ocr_id=ocr_id,
                 status="pending",
                 message="Receipt uploaded and queued for processing",
-                estimated_completion_time=30  # Mock estimate
+                estimated_completion_time=estimated_time if estimated_time is not None else 10
             )
         
     except HTTPException as e:
@@ -172,8 +197,16 @@ async def get_receipt_status(
         )
         
         # Add estimated time if still processing
-        if ocr_result.receipt_status in [ReceiptStatus.PENDING, ReceiptStatus.PROCESSED]:
-            status_response.estimated_completion_time = 15  # Mock estimate
+        if ocr_result.receipt_status in [ReceiptStatus.PENDING]:
+            # Get the image to calculate estimated time
+            try:
+                image_bytes = await fetch_image_from_s3(ocr_result.image_path)
+                estimated_time = await calculate_ocr_completion_time(image_bytes)
+                print(f"Estimated time: {estimated_time} || 2")
+                status_response.estimated_completion_time = estimated_time if estimated_time is not None else 10
+            except Exception as e:
+                logger.error(f"Error calculating estimated time: {str(e)}")
+                status_response.estimated_completion_time = 10  # Default fallback
             
         return status_response
             
@@ -222,6 +255,11 @@ async def get_receipt_ocr_results(
         result = await db.execute(query)
         expense_items = result.scalars().all()
         
+        # Get confidence scores if they exist
+        query = select(OCRConfidence).where(OCRConfidence.ocr_id == ocr_id)
+        result = await db.execute(query)
+        confidence_scores = result.scalars().all()
+        
         # Convert to response format
         items = [
             OCRResultItem(
@@ -233,9 +271,13 @@ async def get_receipt_ocr_results(
             for item in expense_items
         ]
         
-        # In a real system, we'd have more fields populated
-        # For now we'll return what we have, with some mock data if needed
-        confidence_score = 0.95  # Mock confidence score
+        confidence_score_list = [
+            OCRConfidenceBase(
+                field_name=score.field_name,
+                confidence_score=score.confidence_score
+            )
+            for score in confidence_scores
+        ]
             
         return OCRResultResponse(
             ocr_id=ocr_result.ocr_id,
@@ -244,7 +286,7 @@ async def get_receipt_ocr_results(
             transaction_date=ocr_result.transaction_date or datetime.utcnow(),
             payment_method=ocr_result.payment_method,
             items=items,
-            confidence_score=confidence_score,
+            confidence_scores=confidence_score_list,
             image_url=ocr_result.image_path,
             receipt_status=ocr_result.receipt_status
         )
@@ -258,6 +300,72 @@ async def get_receipt_ocr_results(
                 "status": "error",
                 "error_code": "server_error",
                 "message": "Error retrieving OCR results",
+                "details": {"error": str(e)}
+            }
+        )
+
+
+@router.post("/{ocr_id}/feedback", response_model=OCRFeedbackResponse)
+async def submit_ocr_feedback(
+    ocr_id: uuid.UUID = Path(...),
+    feedback: OCRFeedbackRequest = Body(...),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+) -> OCRFeedbackResponse:
+    """Submit feedback on OCR results for model training"""
+    try:
+        # Verify OCR record exists and belongs to user
+        query = select(OCRResult).where(
+            OCRResult.ocr_id == ocr_id,
+            OCRResult.user_id == current_user.user_id
+        )
+        result = await db.execute(query)
+        ocr_result = result.scalar_one_or_none()
+        
+        if not ocr_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "status": "error",
+                    "error_code": "resource_not_found",
+                    "message": "Receipt not found"
+                }
+            )
+        
+        # Create feedback entries
+        feedback_id = uuid.uuid4()
+        first_feedback = True
+        
+        for correction in feedback.corrections:
+            feedback_entry = OCRTrainingFeedback(
+                feedback_id=feedback_id if first_feedback else uuid.uuid4(),
+                ocr_id=ocr_id,
+                user_id=current_user.user_id,
+                field_name=correction.field_name,
+                original_value=correction.original_value,
+                corrected_value=correction.corrected_value
+            )
+            db.add(feedback_entry)
+            first_feedback = False
+        
+        # Save to database
+        await db.commit()
+        
+        return OCRFeedbackResponse(
+            status="success",
+            message="Feedback submitted successfully",
+            feedback_id=feedback_id
+        )
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "status": "error",
+                "error_code": "server_error",
+                "message": "Error submitting OCR feedback",
                 "details": {"error": str(e)}
             }
         )
