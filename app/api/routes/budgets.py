@@ -149,7 +149,7 @@ async def get_overall_budget_spending(db: AsyncSession, user_id: UUID, start_dat
     
     # Calculate remaining and percentage
     remaining = budget_amount - float(spending)
-    percentage_used = (float(spending) / budget_amount) * 100 if budget_amount > 0 else 0
+    percentage_used = round(float(spending) / budget_amount, 2) * 100 if budget_amount > 0 else 0
     
     return OverallBudget(
         budget_id=budget.budget_id if budget else None,

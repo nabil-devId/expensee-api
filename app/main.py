@@ -85,4 +85,4 @@ if __name__ == "__main__":
     import uvicorn
     
     logger.info("Starting application")
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=True)

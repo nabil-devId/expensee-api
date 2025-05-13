@@ -36,12 +36,6 @@ RUN chmod -R 755 /app/temp
 RUN chown -R app:app /app
 USER app
 
-# Add this near the end of your Dockerfile, before the CMD line
-RUN pip freeze | grep -E 'asyncpg|psycopg2|sqlalchemy|pytesseract' && \
-    echo "DATABASE_URL environment variable:" && \
-    echo ${DATABASE_URL} && \
-    echo "TESSERACT_CMD environment variable:" && \
-    echo ${TESSERACT_CMD}
-
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Change port to 8080 for Elastic Beanstalk
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
