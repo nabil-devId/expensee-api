@@ -36,6 +36,9 @@ migrate: venv ## Apply migrations
 dev: venv db migrate ## Start development server with hot reload
 	$(INVENV) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
+dev-local: venv migrate ## Start development server with hot reload
+	$(INVENV) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
 clean: ## Remove virtual environment and cached files
 	rm -rf $(VENV_NAME)
 	find . -type d -name "__pycache__" -exec rm -rf {} +
