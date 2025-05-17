@@ -1,1 +1,1 @@
-web: gunicorn -k uvicorn.workers.UvicornWorker application:application --bind 0.0.0.0:8000
+web: gunicorn application:wsgi --bind 0.0.0.0:8000 --workers 3 --threads 2
