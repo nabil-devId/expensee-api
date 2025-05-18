@@ -8,13 +8,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "expense-tracker-api"
-    SECRET_KEY: str = secrets.token_urlsafe(32)
-    # 60 minutes * 24 hours * 8 days = 8 days
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    SECRET_KEY: str = "your-secret-key-here"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ALGORITHM: str = "HS256"
-    # BACKEND_CORS_ORIGINS is a comma-separated list of origins
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
-    # Server host for OpenAPI schema (for Swagger and client imports)
+    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = ["https://*.elasticbeanstalk.com", "http://localhost:3000"]
     SERVER_HOST: Optional[str] = None
 
     # Tesseract configuration
@@ -30,33 +27,30 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # Database
-    DATABASE_URL: Optional[str] = None
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_DB: str
-    POSTGRES_HOST: str = "localhost"
+    DATABASE_URL: str = "postgresql+asyncpg://expensee-admin:npg_WZqh5DVEyv7w@ep-curly-butterfly-a1ne721w-pooler.ap-southeast-1.aws.neon.tech/expensee"
+    POSTGRES_USER: str = "expensee-admin"
+    POSTGRES_PASSWORD: str = "npg_WZqh5DVEyv7w"
+    POSTGRES_DB: str = "expensee"
+    POSTGRES_HOST: str = "ep-curly-butterfly-a1ne721w-pooler.ap-southeast-1.aws.neon.tech"
     POSTGRES_PORT: str = "5432"
 
     @model_validator(mode='before')
     def validate_database_url(cls, data: dict) -> dict:
-        if data.get('DATABASE_URL') is not None:
-            return data
-        
-        # Construct URL using environment variables
-        db_url = f"postgresql+asyncpg://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_HOST')}:{data.get('POSTGRES_PORT') or '5432'}/{data.get('POSTGRES_DB') or 'expense_tracker'}"
+        # Static database URL string
+        db_url = "postgresql+asyncpg://expensee-admin:npg_WZqh5DVEyv7w@ep-curly-butterfly-a1ne721w-pooler.ap-southeast-1.aws.neon.tech/expensee"
         data['DATABASE_URL'] = db_url
         
         return data
 
     # AWS Configuration
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
-    AWS_REGION: str
-    RECEIPT_IMAGES_BUCKET: str
+    AWS_ACCESS_KEY_ID: str = "AKIAXYKJW2O22JPT7N74"
+    AWS_SECRET_ACCESS_KEY: str = "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"
+    AWS_REGION: str = "ap-southeast-1"
+    RECEIPT_IMAGES_BUCKET: str = "expensee-receipts"
     
     # AWS SES Configuration
-    SES_SENDER_EMAIL: str
-    SES_SENDER_NAME: str
+    SES_SENDER_EMAIL: str = "amdnabil2001@gmail.com"
+    SES_SENDER_NAME: str = "Expense Tracker"
 
     class Config:
         case_sensitive = True

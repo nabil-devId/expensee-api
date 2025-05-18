@@ -1,5 +1,7 @@
 FROM python:3.9-slim
 
+EXPOSE 8080
+
 WORKDIR /app/
 
 # Install system dependencies including tesseract-ocr
@@ -16,8 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    TESSERACT_CMD=/usr/bin/tesseract
+    PYTHONPATH=/app
 
 # Install Python dependencies
 COPY requirements.txt /app/
