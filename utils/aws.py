@@ -270,7 +270,7 @@ async def process_receipt_with_textract(image_url: str) -> Dict[str, Any]:
         logger.error(f"Error processing receipt with Textract: {str(e)}")
         # Return a dummy response for now, in production, you would handle this differently
         dummy_response = {
-            'merchant_name': 'Sample Store',
+            'merchant_name': ['Sample Store'],
             'total_amount': 42.99,
             'transaction_date': '2025-04-01',
             'payment_method': 'Credit Card',

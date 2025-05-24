@@ -32,74 +32,82 @@ async def login_access_token(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    # Query user by email
-    result = await db.execute(select(User).where(User.email == form_data.username))
-    user = result.scalars().first()
-    
-    if not user or not verify_password(form_data.password, user.password_hash):
+    try:
+        # Query user by email
+        result = await db.execute(select(User).where(User.email == form_data.username))
+        user = result.scalars().first()
+        
+        if not user or not verify_password(form_data.password, user.password_hash):
+            logger.error(f"Incorrect email or password for user {form_data.username}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "authentication_failed",
+                    "message": "Incorrect email or password"
+                }
+            )
+        elif user.status != UserStatus.ACTIVE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "authentication_failed",
+                    "message": f"User account is {user.status}"
+                }
+            )
+        
+        # Update last login timestamp
+        user.last_login = datetime.utcnow()
+        
+        # Generate tokens
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        refresh_token_expires = timedelta(days=30)  # 30 days for refresh token
+        
+        access_token_exp = datetime.utcnow() + access_token_expires
+        refresh_token_exp = datetime.utcnow() + refresh_token_expires
+        
+        # Create JWT tokens
+        access_token = security.create_access_token(
+            user.user_id, expires_delta=access_token_expires
+        )
+        refresh_token = security.create_access_token(
+            user.user_id, expires_delta=refresh_token_expires
+        )
+        
+        # Store tokens in database
+        db_access_token = AuthToken(
+            user_id=user.user_id,
+            token=access_token,
+            type=TokenType.ACCESS,
+            expires_at=access_token_exp,
+            device_info=user_agent
+        )
+        
+        db_refresh_token = AuthToken(
+            user_id=user.user_id,
+            token=refresh_token,
+            type=TokenType.REFRESH,
+            expires_at=refresh_token_exp,
+            device_info=user_agent
+        )
+        
+        db.add(db_access_token)
+        db.add(db_refresh_token)
+        await db.commit()
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_at": access_token_exp
+        }
+    except Exception as e:
+        logger.error(f"Error logging in: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "status": "error",
-                "error_code": "authentication_failed",
-                "message": "Incorrect email or password"
-            }
+            detail={"status": "error", "error_code": "authentication_failed", "message": "Failed to log in"}
         )
-    elif user.status != UserStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "status": "error",
-                "error_code": "authentication_failed",
-                "message": f"User account is {user.status}"
-            }
-        )
-    
-    # Update last login timestamp
-    user.last_login = datetime.utcnow()
-    
-    # Generate tokens
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    refresh_token_expires = timedelta(days=30)  # 30 days for refresh token
-    
-    access_token_exp = datetime.utcnow() + access_token_expires
-    refresh_token_exp = datetime.utcnow() + refresh_token_expires
-    
-    # Create JWT tokens
-    access_token = security.create_access_token(
-        user.user_id, expires_delta=access_token_expires
-    )
-    refresh_token = security.create_access_token(
-        user.user_id, expires_delta=refresh_token_expires
-    )
-    
-    # Store tokens in database
-    db_access_token = AuthToken(
-        user_id=user.user_id,
-        token=access_token,
-        type=TokenType.ACCESS,
-        expires_at=access_token_exp,
-        device_info=user_agent
-    )
-    
-    db_refresh_token = AuthToken(
-        user_id=user.user_id,
-        token=refresh_token,
-        type=TokenType.REFRESH,
-        expires_at=refresh_token_exp,
-        device_info=user_agent
-    )
-    
-    db.add(db_access_token)
-    db.add(db_refresh_token)
-    await db.commit()
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "expires_at": access_token_exp
-    }
 
 
 @router.post("/refresh", response_model=Token)
