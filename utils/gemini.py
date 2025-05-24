@@ -16,7 +16,7 @@ import datetime
 import json
 from PIL import Image
 import numpy as np
-import cv2
+# Removing cv2 import as it's not used and causes issues in Cloud Run
 from google import genai
 
 def process_receipt_with_gemini(files, type) -> Dict[str, Any]:
