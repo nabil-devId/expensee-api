@@ -1,6 +1,6 @@
 import uuid
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Optional
 from datetime import datetime
 from utils.aws import process_receipt_with_textract, upload_image_to_s3, calculate_ocr_completion_time, fetch_image_from_s3
 from utils.gemini import process_receipt_with_gemini
@@ -11,22 +11,23 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, status, Path, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, desc, asc
 
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
 from app.models.user import User
-from app.models.receipt import OCRResult, ReceiptStatus, OCRConfidence, OCRTrainingFeedback
-from app.models.category import Category, UserCategory
+
 from app.models.expense_history import ExpenseHistory
 from app.models.expense_item import ExpenseItem
+from schemas.receipt import OCRResultResponse
+from app.models.ocr_result import OCRResult
+from app.models.ocr_result_item import OCRResultItem
+from app.models.category import Category
+from app.models.user_category import UserCategory
+from app.models.receipt import ReceiptStatus
 
 from schemas.receipt import (
-    ReceiptUploadRequest, ReceiptUploadResponse, ReceiptStatusResponse,
-    OCRResultCreate, OCRResultResponse, OCRResultItem, OCRResultInDB,
-    AcceptOCRRequest, AcceptOCRResponse, ExpenseHistoryCreate,
-    ExpenseItemCreate, ExpenseHistoryResponse, ExpenseHistoryDetails,
-    ExpenseHistoryListResponse, PaginationInfo, ExpenseSummary, ErrorResponse,
+    ReceiptUploadResponse, ReceiptStatusResponse,
+    AcceptOCRRequest, AcceptOCRResponse,
     OCRConfidenceBase, OCRFeedbackRequest, OCRFeedbackResponse
 )
 
@@ -117,18 +118,7 @@ async def upload_receipt(
                         user_id=current_user.user_id,
                     )
                     db.add(expense_item)
-            
-            # Store confidence scores
-            if ocr_data.get('confidence_scores'):
-                for field_name, confidence_score in ocr_data.get('confidence_scores').items():
-                    ocr_confidence = OCRConfidence(
-                        ocr_id=ocr_id,
-                        field_name=field_name,
-                        confidence_score=confidence_score
-                    )
-                    db.add(ocr_confidence)
-                
-                await db.commit()
+
         except Exception as e:
             logger.error(f"Error processing receipt: {str(e)}")
             # Don't fail the request if OCR processing fails - the user can still get their receipt ID
@@ -163,7 +153,7 @@ async def upload_receipt(
             }
         )
 @router.post("/gemini/upload", response_model=ReceiptUploadResponse, status_code=status.HTTP_202_ACCEPTED)
-async def upload_receipt(
+async def upload_receipt_gemini(
     file: UploadFile = File(...),
     user_notes: Optional[str] = Form(None),
     current_user: User = Depends(get_current_active_user),
@@ -247,17 +237,6 @@ async def upload_receipt(
                     )
                     db.add(expense_item)
             
-            # Store confidence scores
-            if ocr_data.get('confidence_scores'):
-                for field_name, confidence_score in ocr_data.get('confidence_scores').items():
-                    ocr_confidence = OCRConfidence(
-                        ocr_id=ocr_id,
-                        field_name=field_name,
-                        confidence_score=confidence_score
-                    )
-                    db.add(ocr_confidence)
-                
-                await db.commit()
         except Exception as e:
             logger.error(f"Error processing receipt: {str(e)}")
             # Don't fail the request if OCR processing fails - the user can still get their receipt ID
@@ -385,11 +364,6 @@ async def get_receipt_ocr_results(
         result = await db.execute(query)
         expense_items = result.scalars().all()
         
-        # Get confidence scores if they exist
-        query = select(OCRConfidence).where(OCRConfidence.ocr_id == ocr_id)
-        result = await db.execute(query)
-        confidence_scores = result.scalars().all()
-        
         # Convert to response format
         items = [
             OCRResultItem(
@@ -401,14 +375,6 @@ async def get_receipt_ocr_results(
             for item in expense_items
         ]
         
-        confidence_score_list = [
-            OCRConfidenceBase(
-                field_name=score.field_name,
-                confidence_score=score.confidence_score
-            )
-            for score in confidence_scores
-        ]
-            
         return OCRResultResponse(
             ocr_id=ocr_result.ocr_id,
             merchant_name=ocr_result.merchant_name or "Unknown Merchant",
@@ -416,7 +382,6 @@ async def get_receipt_ocr_results(
             transaction_date=ocr_result.transaction_date or datetime.utcnow(),
             payment_method=ocr_result.payment_method,
             items=items,
-            confidence_scores=confidence_score_list,
             image_url=ocr_result.image_path,
             receipt_status=ocr_result.receipt_status
         )
@@ -464,19 +429,6 @@ async def submit_ocr_feedback(
         
         # Create feedback entries
         feedback_id = uuid.uuid4()
-        first_feedback = True
-        
-        for correction in feedback.corrections:
-            feedback_entry = OCRTrainingFeedback(
-                feedback_id=feedback_id if first_feedback else uuid.uuid4(),
-                ocr_id=ocr_id,
-                user_id=current_user.user_id,
-                field_name=correction.field_name,
-                original_value=correction.original_value,
-                corrected_value=correction.corrected_value
-            )
-            db.add(feedback_entry)
-            first_feedback = False
         
         # Save to database
         await db.commit()
@@ -503,7 +455,7 @@ async def submit_ocr_feedback(
 
 @router.post("/{ocr_id}/accept", response_model=AcceptOCRResponse)
 async def accept_ocr_results(
-    request: AcceptOCRRequest,
+    request: AcceptOCRRequest = Body(...),
     ocr_id: uuid.UUID = Path(...),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)

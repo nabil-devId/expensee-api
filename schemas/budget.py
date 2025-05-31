@@ -27,8 +27,8 @@ class CategoryInfo(BaseModel):
 class BudgetBase(BaseModel):
     amount: condecimal(ge=0, decimal_places=2)
     period: BudgetPeriod
-    start_date: date
-    end_date: Optional[date] = None
+    month: int
+    year: int
 
 
 class BudgetCreate(BudgetBase):

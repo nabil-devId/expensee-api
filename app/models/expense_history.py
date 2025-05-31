@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, String, ForeignKey, Text, Boolean, Numeric
 from sqlalchemy.dialects.postgresql import UUID
@@ -9,6 +9,33 @@ from app.core.db import Base
 
 
 class ExpenseHistory(Base):
+    """Model for historical expense records.
+
+    Tracks expenses over time, including manual and OCR-derived entries, for reporting and analytics.
+
+    Columns:
+        expense_id (UUID): Unique identifier for the expense record.
+        user_id (UUID): The user who made the expense.
+        ocr_id (UUID): Associated OCR result for this expense (nullable).
+        merchant_name (str): Name of the merchant.
+        total_amount (Decimal): Total amount spent.
+        transaction_date (datetime): Date and time of the transaction.
+        payment_method (str): Payment method used (e.g., cash, credit card).
+        category_id (UUID): Associated predefined category (nullable).
+        user_category_id (UUID): Associated custom user category (nullable).
+        notes (str): Additional notes about the expense.
+        created_at (datetime): Timestamp when the record was created.
+        updated_at (datetime): Timestamp when the record was last updated.
+        is_manual_entry (bool): Whether this entry was added manually or via OCR.
+    Relationships:
+        user: The user who made the expense.
+        ocr_result: The OCR result associated with this expense.
+        category: The predefined category for this expense.
+        user_category: The custom user category for this expense.
+    
+    Important:
+        one of category_id or user_category_id must be set
+    """
     __tablename__ = "expense_history"
 
     expense_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -21,8 +48,8 @@ class ExpenseHistory(Base):
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
     user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     is_manual_entry = Column(Boolean, default=False)
 
     # Relationships
@@ -30,3 +57,4 @@ class ExpenseHistory(Base):
     ocr_result = relationship("OCRResult", backref="expense")
     category = relationship("Category", foreign_keys=[category_id])
     user_category = relationship("UserCategory", foreign_keys=[user_category_id])
+    expense_items = relationship("ExpenseItem", back_populates="expense_history")

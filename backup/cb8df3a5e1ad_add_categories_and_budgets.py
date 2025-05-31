@@ -25,7 +25,6 @@ def upgrade():
         sa.Column('name', sa.String(), nullable=False),
         sa.Column('icon', sa.String(), nullable=False),
         sa.Column('color', sa.String(), nullable=False),
-        sa.Column('is_default', sa.Boolean(), default=True),
         sa.Column('created_at', sa.TIMESTAMP(), default=sa.func.now()),
         sa.Column('updated_at', sa.TIMESTAMP(), default=sa.func.now(), onupdate=sa.func.now()),
         sa.PrimaryKeyConstraint('category_id')
@@ -54,8 +53,8 @@ def upgrade():
         sa.Column('user_category_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('amount', sa.Numeric(precision=10, scale=2), nullable=False),
         sa.Column('period', sa.String(), nullable=False),
-        sa.Column('start_date', sa.Date(), nullable=False),
-        sa.Column('end_date', sa.Date(), nullable=True),
+        sa.Column('month', sa.Integer(), nullable=False),
+        sa.Column('year', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.TIMESTAMP(), default=sa.func.now()),
         sa.Column('updated_at', sa.TIMESTAMP(), default=sa.func.now(), onupdate=sa.func.now()),
         sa.ForeignKeyConstraint(['user_id'], ['users.user_id'], ),
@@ -73,20 +72,21 @@ def upgrade():
 
     # Add default categories
     op.execute("""
-    INSERT INTO categories (category_id, name, icon, color, is_default)
+    INSERT INTO categories (category_id, name, icon, color)
     VALUES 
-        (gen_random_uuid(), 'Groceries', 'shopping-cart', '#4CAF50', TRUE),
-        (gen_random_uuid(), 'Dining', 'utensils', '#FF9800', TRUE),
-        (gen_random_uuid(), 'Transportation', 'car', '#2196F3', TRUE),
-        (gen_random_uuid(), 'Utilities', 'bolt', '#FFC107', TRUE),
-        (gen_random_uuid(), 'Housing', 'home', '#795548', TRUE),
-        (gen_random_uuid(), 'Entertainment', 'film', '#9C27B0', TRUE),
-        (gen_random_uuid(), 'Health', 'heart', '#F44336', TRUE),
-        (gen_random_uuid(), 'Shopping', 'shopping-bag', '#3F51B5', TRUE),
-        (gen_random_uuid(), 'Travel', 'plane', '#009688', TRUE),
-        (gen_random_uuid(), 'Education', 'book', '#607D8B', TRUE),
-        (gen_random_uuid(), 'Personal Care', 'user', '#E91E63', TRUE),
-        (gen_random_uuid(), 'Miscellaneous', 'ellipsis-h', '#9E9E9E', TRUE)
+        (gen_random_uuid(), 'General', 'general', '#4CAF50'),
+        (gen_random_uuid(), 'Groceries', 'shopping-cart', '#4CAF50'),
+        (gen_random_uuid(), 'Dining', 'utensils', '#FF9800'),
+        (gen_random_uuid(), 'Transportation', 'car', '#2196F3'),
+        (gen_random_uuid(), 'Utilities', 'bolt', '#FFC107'),
+        (gen_random_uuid(), 'Housing', 'home', '#795548'),
+        (gen_random_uuid(), 'Entertainment', 'film', '#9C27B0'),
+        (gen_random_uuid(), 'Health', 'heart', '#F44336'),
+        (gen_random_uuid(), 'Shopping', 'shopping-bag', '#3F51B5'),
+        (gen_random_uuid(), 'Travel', 'plane', '#009688'),
+        (gen_random_uuid(), 'Education', 'book', '#607D8B'),
+        (gen_random_uuid(), 'Personal Care', 'user', '#E91E63'),
+        (gen_random_uuid(), 'Miscellaneous', 'ellipsis-h', '#9E9E9E'),
     """)
 
 

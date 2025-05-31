@@ -13,7 +13,8 @@ from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
 from app.models.user import User
 from app.models.expense_history import ExpenseHistory
-from app.models.category import Category, UserCategory
+from app.models.category import Category
+from app.models.user_category import UserCategory
 from app.models.budget import Budget
 
 from schemas.analytics.trends import (
@@ -42,7 +43,7 @@ async def get_period_start_end(
     # If only end_date is provided, calculate start_date based on period
     elif end_date and not start_date:
         if period == PeriodType.WEEKLY:
-            start_date = end_date - timedelta(days=7*12)  # 12 weeks
+            start_date = end_date - timedelta(days=7 * 12)  # 12 weeks
         elif period == PeriodType.MONTHLY:
             # Go back 12 months
             year = end_date.year - (1 if end_date.month <= 12 else 0)
@@ -59,7 +60,7 @@ async def get_period_start_end(
     else:
         if period == PeriodType.WEEKLY:
             end_date = today
-            start_date = end_date - timedelta(days=7*12)  # 12 weeks
+            start_date = end_date - timedelta(days=7 * 12)  # 12 weeks
         elif period == PeriodType.MONTHLY:
             end_date = today
             # Go back 12 months

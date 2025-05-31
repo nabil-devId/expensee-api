@@ -4,8 +4,6 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-
-
 # To run this code you need to install the following dependencies:
 # pip install google-genai
 

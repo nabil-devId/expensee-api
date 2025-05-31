@@ -9,6 +9,20 @@ from app.core.db import Base
 
 
 class PasswordReset(Base):
+    """Model for password reset tokens.
+
+    Stores password reset tokens for users, including expiration and usage status.
+
+    Columns:
+        token_id (UUID): Unique identifier for the password reset token.
+        user_id (UUID): The user who requested the password reset.
+        token (str): The password reset token string.
+        expires_at (datetime): Expiration timestamp for the token.
+        created_at (datetime): Timestamp when the token was created.
+        is_used (bool): Whether the token has been used.
+    Relationships:
+        user: The user who owns the token.
+    """
     __tablename__ = "password_reset_tokens"
 
     token_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

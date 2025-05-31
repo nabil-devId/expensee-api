@@ -14,11 +14,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Now import our models
-from app.models.user import User, UserStatus
-from app.models.auth_token import AuthToken, TokenType
-from app.models.receipt import OCRResult, ReceiptStatus
-from app.models.expense_item import ExpenseItem
-from app.models.expense_history import ExpenseHistory
+import app.models
 from app.core.db import Base
 from app.core.config import settings
 

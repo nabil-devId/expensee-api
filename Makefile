@@ -1,48 +1,28 @@
-.PHONY: setup dev clean db migrations migrate install venv
+.PHONY: dev clean migrations migrate migrate-rollback install venv help
 
-# Default Python interpreter
+# --- Configuration ---
 PYTHON := python3
-VENV_NAME := venv
-VENV_BIN := $(VENV_NAME)/bin
-VENV_ACTIVATE := . $(VENV_BIN)/activate
+VENV_DIR := .venv
+REQUIREMENTS_FILE := requirements.txt
 
-# Check if we're in a virtual environment
-ifeq ("$(VIRTUAL_ENV)","")
-  INVENV = $(VENV_ACTIVATE) &&
-else
-  INVENV =
-endif
+# --- Virtual Environment Tools ---
+# These variables point to executables *inside* the virtual environment
+VENV_PYTHON := $(VENV_DIR)/bin/python
+VENV_PIP := $(VENV_DIR)/bin/pip
+VENV_ALEMBIC := $(VENV_DIR)/bin/alembic
+VENV_UVICORN := $(VENV_DIR)/bin/uvicorn
 
-venv: ## Create virtual environment if it doesn't exist
-	test -d $(VENV_NAME) || $(PYTHON) -m venv $(VENV_NAME)
-	$(VENV_ACTIVATE)
-	@echo "Virtual environment is ready and activated"
+# Marker file to indicate venv is set up
+VENV_MARKER := $(VENV_DIR)/.venv_created
 
-setup: venv ## Create virtual environment and install dependencies
-	$(INVENV) pip install -r requirements.txt
 
-install: venv ## Install dependencies only
-	$(INVENV) pip install -r requirements.txt
+# Marker file to indicate dependencies are installed
+INSTALL_MARKER := $(VENV_DIR)/.requirements_installed
 
-db: ## Start PostgreSQL database
-	docker-compose up -d db
+# --- Targets ---
 
-migrations: venv ## Generate new migration
-	$(INVENV) PYTHONPATH=. alembic revision --autogenerate -m "$(message)"
-
-migrate: venv ## Apply migrations
-	$(INVENV) PYTHONPATH=. alembic upgrade head
-
-dev: venv db migrate ## Start development server with hot reload
-	$(INVENV) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-dev-local: venv migrate ## Start development server with hot reload
-	$(INVENV) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-clean: ## Remove virtual environment and cached files
-	rm -rf $(VENV_NAME)
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+# Default target when `make` is run without arguments
+.DEFAULT_GOAL := help
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -58,4 +38,47 @@ help: ## Show this help message
 	} \
 	{ lastLine = $$0 }' $(MAKEFILE_LIST)
 
-.DEFAULT_GOAL := help 
+$(VENV_MARKER):
+	@echo ">>> Creating virtual environment in $(VENV_DIR)..."
+	test -d $(VENV_DIR) || $(PYTHON) -m venv $(VENV_DIR)
+	@echo ">>> Upgrading pip and installing wheel in virtual environment..."
+	$(VENV_PIP) install --upgrade pip wheel
+	@touch $@ # Create the marker file
+
+venv: $(VENV_MARKER) ## Create/ensure virtual environment exists and core tools are up-to-date
+	@echo ">>> Virtual environment is ready at $(VENV_DIR)"
+
+$(INSTALL_MARKER): $(VENV_MARKER) $(REQUIREMENTS_FILE)
+	@echo ">>> Installing dependencies from $(REQUIREMENTS_FILE)..."
+	$(VENV_PIP) install -r $(REQUIREMENTS_FILE)
+	@touch $@ # Create the marker file
+
+install: $(INSTALL_MARKER) ## Install/update dependencies from requirements.txt
+	@echo ">>> Dependencies are up to date."
+
+migrations: install ## Generate new migration (usage: make migrations message="your message")
+	@if [ -z "$(message)" ]; then \
+		echo "ERROR: 'message' variable is not set. Usage: make migrations message=\"your descriptive message\""; \
+		exit 1; \
+	fi
+	@echo ">>> Generating migration: $(message)"
+	PYTHONPATH=. $(VENV_ALEMBIC) revision --autogenerate -m "$(message)"
+
+migrate: install ## Apply migrations
+	@echo ">>> Applying database migrations..."
+	PYTHONPATH=. $(VENV_ALEMBIC) upgrade head
+
+migrate-rollback: install ## Downgrade migrations by one step
+	@echo ">>> Rolling back last database migration..."
+	PYTHONPATH=. $(VENV_ALEMBIC) downgrade -1
+
+dev: migrate ## Start development server with hot reload (depends on migrations being applied)
+	@echo ">>> Starting development server on http://0.0.0.0:8000..."
+	PYTHONPATH=. $(VENV_UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000
+
+clean: ## Remove virtual environment and cached files
+	@echo ">>> Cleaning project..."
+	rm -rf $(VENV_DIR)
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
+	@echo ">>> Clean complete."

@@ -19,7 +19,8 @@ from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
 from app.models.user import User
 from app.models.expense_history import ExpenseHistory
-from app.models.category import Category, UserCategory
+from app.models.category import Category
+from app.models.user_category import UserCategory
 from app.models.budget import Budget
 
 from schemas.reports.monthly import (
@@ -131,7 +132,7 @@ async def get_recurring_expenses(
                 # Calculate average days between transactions
                 days_between = []
                 for i in range(1, len(dates)):
-                    delta = (dates[i] - dates[i-1]).days
+                    delta = (dates[i] - dates[i - 1]).days
                     days_between.append(delta)
                 
                 avg_days = sum(days_between) / len(days_between)

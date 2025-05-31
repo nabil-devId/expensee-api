@@ -1,0 +1,6 @@
+{
+    "pylint.enabled": true,
+    "pylint.importStrategy": "useBundled",
+    "python.jediEnabled": false
+    
+}
