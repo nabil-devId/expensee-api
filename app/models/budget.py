@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import Column, TIMESTAMP, ForeignKey, Numeric
+from sqlalchemy import Column, ForeignKey, Numeric, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 
@@ -36,13 +36,13 @@ class Budget(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
     user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
+    budget_name = Column(String, nullable=False)
     month = Column(Numeric(precision=2), nullable=False)
     year = Column(Numeric(precision=4), nullable=False)
     amount = Column(Numeric(precision=10, scale=2), nullable=False)
-    created_at = Column(TIMESTAMP, default=datetime.now(timezone.utc))
-    updated_at = Column(TIMESTAMP, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="budgets")
-    category = relationship("Category", back_populates="budgets", foreign_keys=[category_id])
-    user_category = relationship("UserCategory", back_populates="budgets", foreign_keys=[user_category_id])
+    category = relationship("Category", back_populates="budgets", foreign_keys=[category_id], lazy="selectin")
+    user_category = relationship("UserCategory", back_populates="budgets", foreign_keys=[user_category_id], lazy="selectin")

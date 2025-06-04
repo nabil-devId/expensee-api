@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime, timezone
-
-from sqlalchemy import Column, DateTime, Numeric, ForeignKey, String, Date
+from sqlalchemy import Column, DateTime, Numeric, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 
@@ -34,10 +33,9 @@ class OCRResultItem(Base):
     quantity = Column(Numeric(precision=10, scale=2), default=1)
     unit_price = Column(Numeric(precision=10, scale=2), nullable=False)
     total_price = Column(Numeric(precision=10, scale=2), nullable=False)
-    purchase_date = Column(Date, nullable=False, default=datetime.now(timezone.utc).date())
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    purchase_date = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now())
 
     # Relationships
-    ocr_result = relationship("OCRResult", back_populates="ocr_result_items")
     ocr_result = relationship("OCRResult", back_populates="ocr_result_items")

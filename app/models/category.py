@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import Column, String, TIMESTAMP
+from sqlalchemy import Column, String, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 
@@ -28,8 +28,8 @@ class Category(Base):
     name = Column(String, nullable=False)
     icon = Column(String, nullable=False)
     color = Column(String, nullable=False)
-    created_at = Column(TIMESTAMP, default=datetime.now(timezone.utc))
-    updated_at = Column(TIMESTAMP, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now())
 
     # Relationship with budgets
     budgets = relationship("Budget", back_populates="category", primaryjoin="and_(Category.category_id==Budget.category_id)")

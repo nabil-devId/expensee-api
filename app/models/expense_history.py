@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime, timezone
-
 from sqlalchemy import Column, DateTime, String, ForeignKey, Text, Boolean, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 
@@ -48,13 +47,12 @@ class ExpenseHistory(Base):
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
     user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now())
     is_manual_entry = Column(Boolean, default=False)
 
     # Relationships
-    user = relationship("User", backref="expenses")
     ocr_result = relationship("OCRResult", backref="expense")
     category = relationship("Category", foreign_keys=[category_id])
     user_category = relationship("UserCategory", foreign_keys=[user_category_id])
-    expense_items = relationship("ExpenseItem", back_populates="expense_history")
+    expense_items = relationship("ExpenseItem", backref="expense_history")

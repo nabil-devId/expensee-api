@@ -41,6 +41,7 @@ app = FastAPI(
     ],
     # Add security scheme
     swagger_ui_init_oauth={
+        "persistAuthorization": True, # Add this line to persist auth
         "usePkceWithAuthorizationCodeGrant": True,
         "useBasicAuthenticationWithAccessCodeGrant": True,
         "clientId": "",

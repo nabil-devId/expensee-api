@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime, timezone
-
-from sqlalchemy import Column, DateTime, String, ForeignKey, Integer, Numeric, Date
+from sqlalchemy import Column, DateTime, String, ForeignKey, Integer, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 
@@ -37,10 +36,6 @@ class ExpenseItem(Base):
     quantity = Column(Integer, default=1)
     unit_price = Column(Numeric(precision=10, scale=2), nullable=False)  # For what? this will be same as total_price for now, we will remove for later
     total_price = Column(Numeric(precision=10, scale=2), nullable=False)
-    purchase_date = Column(Date, nullable=False, default=datetime.now(timezone.utc).date())
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
-
-    # Relationships
-    expense_history = relationship("ExpenseHistory", back_populates="expense_items")
-    user = relationship("User", back_populates="expense_items")
+    purchase_date = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now())

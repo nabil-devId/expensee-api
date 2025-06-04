@@ -1,9 +1,10 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Column, DateTime, String, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 
@@ -29,7 +30,7 @@ class PasswordReset(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
     token = Column(String, nullable=False, index=True, unique=True)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
     is_used = Column(Boolean, default=False)  # Track if token has been used
 
     # Relationships
@@ -38,7 +39,7 @@ class PasswordReset(Base):
     @property
     def is_expired(self) -> bool:
         """Check if the token is expired"""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
     @classmethod
     def create_token(cls, user_id: uuid.UUID) -> tuple[str, "PasswordReset"]:
@@ -58,7 +59,7 @@ class PasswordReset(Base):
         token_record = cls(
             user_id=user_id,
             token=token,
-            expires_at=datetime.utcnow() + timedelta(minutes=30)
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30)
         )
         
         return token, token_record

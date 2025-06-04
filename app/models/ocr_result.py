@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime, timezone
-
 from sqlalchemy import Column, DateTime, Enum, Numeric, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.db import Base
 from app.models.receipt import ReceiptStatus
@@ -43,8 +42,8 @@ class OCRResult(Base):
     payment_method = Column(String, nullable=True)
     receipt_status = Column(Enum(ReceiptStatus), default=ReceiptStatus.PENDING)
     raw_ocr_data = Column(JSONB, nullable=True)  # Original OCR response
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now(), onupdate=func.now())
 
     # Relationships
     user = relationship("User", backref="ocr_results")
