@@ -28,7 +28,7 @@ class ReceiptStatusResponse(BaseModel):
 
 
 # OCR Result Item Schema
-class OCRResultItem(BaseModel):
+class OCRResultItemResponse(BaseModel):
     name: str
     quantity: int
     unit_price: Decimal
@@ -107,10 +107,13 @@ class OCRFeedbackResponse(BaseModel):
 
 class OCRResultResponse(OCRResultBase):
     ocr_id: UUID
-    items: List[OCRResultItem] = []
+    items: List[OCRResultItemResponse] = []
     confidence_scores: Optional[List[OCRConfidenceBase]] = None
     image_url: str
     receipt_status: ReceiptStatus
+    category_id: Optional[UUID]
+    user_category_id: Optional[UUID]
+    category_name: Optional[str]
 
 
 # Accept OCR Results Request
@@ -121,7 +124,7 @@ class AcceptOCRRequest(BaseModel):
     payment_method: Optional[str] = None
     category_id: Optional[UUID]
     user_category_id: Optional[UUID]
-    items: List[OCRResultItem]
+    items: List[OCRResultItemResponse]
     notes: Optional[str] = None
 
 
@@ -137,3 +140,8 @@ class ErrorResponse(BaseModel):
     error_code: str
     message: str
     details: Optional[Dict[str, Any]] = None
+
+class OCRResultCategory(BaseModel):
+    category_id: UUID
+    category_name: str
+    is_user_category: bool

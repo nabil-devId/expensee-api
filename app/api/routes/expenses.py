@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, desc, asc, and_, exists
+from sqlalchemy.sql.functions import coalesce
 
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
@@ -80,7 +81,7 @@ async def get_expense_history(
             
         # Get paginated expenses
         query = (
-            select(ExpenseHistory, OCRResult.image_path, Category.name.label("category_name"), UserCategory.name.label("user_category_name"))
+            select(ExpenseHistory, OCRResult.image_path, Category.category_id, UserCategory.user_category_id, Category.name.label("category_name"), UserCategory.name.label("user_category_name"))
             .outerjoin(OCRResult, ExpenseHistory.ocr_id == OCRResult.ocr_id)
             .outerjoin(Category, Category.category_id == ExpenseHistory.category_id)
             .outerjoin(UserCategory, UserCategory.user_category_id == ExpenseHistory.user_category_id)
@@ -95,7 +96,7 @@ async def get_expense_history(
         
         # Format response
         expenses = []
-        for expense, image_path, category_name, user_category_name in expense_records:
+        for expense, image_path, category_name, user_category_name, user_category_id, category_id in expense_records:
             expenses.append(
                 ExpenseHistoryResponse(
                     expense_id=expense.expense_id,
@@ -103,6 +104,8 @@ async def get_expense_history(
                     total_amount=expense.total_amount,
                     transaction_date=expense.transaction_date,
                     category=category_name if category_name else user_category_name,
+                    category_id=category_id,
+                    user_category_id=user_category_id,
                     payment_method=expense.payment_method,
                     notes=expense.notes,
                     has_receipt_image=image_path is not None,
@@ -155,6 +158,8 @@ async def get_expense_history(
         }
         
         # Create summary object with defaults for empty results
+        # make the 0 after . only 2
+
         summary = ExpenseSummary(
             total_expenses=summary_record.total or Decimal("0.0"),
             avg_expense=summary_record.avg or Decimal("0.0"),

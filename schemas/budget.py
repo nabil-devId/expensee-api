@@ -49,16 +49,14 @@ class BudgetResponse(BudgetBase):
     class Config:
         from_attributes = True
 
-
-class BudgetUpdateResponse(BudgetResponse):
-    updated_at: datetime
-
-
 class BudgetWithSpending(BudgetResponse):
     current_spending: condecimal(decimal_places=2)
     remaining: condecimal(decimal_places=2)
     percentage_used: condecimal(decimal_places=2)
 
+
+class BudgetUpdateResponse(BudgetWithSpending):
+    updated_at: datetime
 
 class OverallBudget(BaseModel):
     amount: condecimal(ge=0, decimal_places=2)

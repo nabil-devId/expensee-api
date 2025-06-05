@@ -2,8 +2,9 @@ import uuid
 import logging
 from typing import Optional
 from datetime import datetime
+from schemas import category
 from utils.aws import process_receipt_with_textract, upload_image_to_s3, calculate_ocr_completion_time, fetch_image_from_s3
-from utils.gemini import process_receipt_with_gemini
+from utils.gemini import find_category, process_receipt_with_gemini
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -11,6 +12,8 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, status, Path, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
@@ -18,7 +21,7 @@ from app.models.user import User
 
 from app.models.expense_history import ExpenseHistory
 from app.models.expense_item import ExpenseItem
-from schemas.receipt import OCRResultResponse
+from schemas.receipt import OCRResultResponse, OCRResultItemResponse
 from app.models.ocr_result import OCRResult
 from app.models.ocr_result_item import OCRResultItem
 from app.models.category import Category
@@ -152,7 +155,7 @@ async def upload_receipt(
                 "details": {"error": str(e)}
             }
         )
-@router.post("/gemini/upload", response_model=ReceiptUploadResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/gemini/upload", response_model=ReceiptUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_receipt_gemini(
     file: UploadFile = File(...),
     user_notes: Optional[str] = Form(None),
@@ -179,16 +182,16 @@ async def upload_receipt_gemini(
         file_content = await file.read()
         
         # 3. Calculate estimated completion time based on image characteristics
-        try:
-            estimated_time = await calculate_ocr_completion_time(file_content)
-            # Ensure we have a valid integer even if something went wrong
-            if estimated_time is None or not isinstance(estimated_time, int) or estimated_time <= 0:
-                estimated_time = 10  # Default fallback
-        except Exception as est_error:
-            logger.error(f"Error calculating estimate time: {str(est_error)}")
-            estimated_time = 10  # Default fallback
+        # try:
+        #     estimated_time = await calculate_ocr_completion_time(file_content)
+        #     # Ensure we have a valid integer even if something went wrong
+        #     if estimated_time is None or not isinstance(estimated_time, int) or estimated_time <= 0:
+        #         estimated_time = 10  # Default fallback
+        # except Exception as est_error:
+        #     logger.error(f"Error calculating estimate time: {str(est_error)}")
+        #     estimated_time = 10  # Default fallback
         
-        print(f"Estimated time: {estimated_time} || 1")
+        # print(f"Estimated time: {estimated_time} || 1")
         # 4. Upload to S3
         # s3_url = await upload_image_to_s3(file_content, file.filename)
         
@@ -214,26 +217,56 @@ async def upload_receipt_gemini(
             
             # Update the OCR result with the processed data
             ocr_result.merchant_name = ocr_data.get('merchant_name')
-            ocr_result.total_amount = ocr_data.get('total_amount')
+            ocr_result.total_amount = int(ocr_data.get('total_amount').replace('.', ''))
             ocr_result.transaction_date = datetime.strptime(ocr_data.get('transaction_date'), '%Y-%m-%d') if ocr_data.get('transaction_date') else None
             ocr_result.payment_method = ocr_data.get('payment_method')
 
             ocr_result.receipt_status = ReceiptStatus.PROCESSED
+
+            category_query = select(Category)  # Select entire Category object
+            result_category = await db.execute(category_query)
+            categories = result_category.scalars().all()
+
+            final_categories = []
+
+            for cat in categories:
+                final_categories.append({"category_id": cat.category_id, "category_name": cat.name})
+            
+            user_category_query = select(UserCategory).where(UserCategory.user_id == current_user.user_id)  # Select entire Category object
+            result_user_category = await db.execute(user_category_query)
+            user_categories = result_user_category.scalars().all()
+
+            final_user_categories = []
+
+            for user_cat in user_categories:
+                final_user_categories.append({"category_id": user_cat.user_category_id, "category_name": user_cat.name})
+
+            super_final_categories = {
+                "categories": final_categories,
+                "user_categories": final_user_categories
+            }
+
+            res = find_category(expense_history_raw=str(ocr_data), category=str(super_final_categories))
+
+            print(f"res_cat: {res}")
+            if res.is_user_category is True:
+                ocr_result.user_category_id = res.category_id
+            else:
+                ocr_result.category_id = res.category_id
             
             # Save the updates
             await db.commit()
             await db.refresh(ocr_result)
-            
+
             # Create expense items based on the OCR result
             if ocr_data.get('items'):
                 for item_data in ocr_data.get('items'):
-                    expense_item = ExpenseItem(
+                    expense_item = OCRResultItem(
                         ocr_id=ocr_id,
                         name=item_data.get('name', 'Unknown Item'),
                         quantity=item_data.get('quantity', 1),
-                        unit_price=item_data.get('price', 0),
-                        total_price=item_data.get('total', item_data.get('price', 0) * item_data.get('quantity', 1)),
-                        user_id=current_user.user_id,
+                        unit_price=int(item_data.get('price', '0').replace('.', '')),
+                        total_price=item_data.get('total', int(item_data.get('price', '0').replace('.', '')) * int(item_data.get('quantity', 1))),
                     )
                     db.add(expense_item)
             
@@ -246,16 +279,14 @@ async def upload_receipt_gemini(
             return ReceiptUploadResponse(
                 ocr_id=ocr_id,
                 status="complete",
-                message="Receipt processed successfully",
-                estimated_completion_time=None
+                message="Receipt processed successfully"
             )
         else:
             # Ensure estimated_time is never null
             return ReceiptUploadResponse(
                 ocr_id=ocr_id,
                 status="pending",
-                message="Receipt uploaded and queued for processing",
-                estimated_completion_time=estimated_time if estimated_time is not None else 10
+                message="Receipt uploaded and queued for processing"
             )
         
     except HTTPException as e:
@@ -345,9 +376,13 @@ async def get_receipt_ocr_results(
         query = select(OCRResult).where(
             OCRResult.ocr_id == ocr_id,
             OCRResult.user_id == current_user.user_id
-        )
+        ).options(selectinload(OCRResult.ocr_result_items), selectinload(OCRResult.category), selectinload(OCRResult.user_category))
         result = await db.execute(query)
         ocr_result = result.scalars().first()
+        print(f"Category Name: {ocr_result.ocr_result_items}")
+
+        # print ocr_result to string
+
         
         if not ocr_result:
             raise HTTPException(
@@ -358,23 +393,26 @@ async def get_receipt_ocr_results(
                     "message": "Receipt not found"
                 }
             )
-            
-        # Get expense items if they exist
-        query = select(ExpenseItem).where(ExpenseItem.ocr_id == ocr_id)
-        result = await db.execute(query)
-        expense_items = result.scalars().all()
-        
-        # Convert to response format
-        items = [
-            OCRResultItem(
-                name=item.name,
-                quantity=item.quantity,
-                unit_price=item.unit_price,
-                total_price=item.total_price,
+
+        items = []
+
+        for item in ocr_result.ocr_result_items:
+            items.append(
+                OCRResultItemResponse(
+                    name=item.name,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                    total_price=item.total_price,
+                )
             )
-            for item in expense_items
-        ]
-        
+            
+        category = 'General'
+        if ocr_result.category:
+            category = ocr_result.category.name
+        elif ocr_result.user_category:
+            category = ocr_result.user_category.name
+        print("OCR Result Items: ", items)
+            
         return OCRResultResponse(
             ocr_id=ocr_result.ocr_id,
             merchant_name=ocr_result.merchant_name or "Unknown Merchant",
@@ -383,7 +421,10 @@ async def get_receipt_ocr_results(
             payment_method=ocr_result.payment_method,
             items=items,
             image_url=ocr_result.image_path,
-            receipt_status=ocr_result.receipt_status
+            receipt_status=ocr_result.receipt_status,
+            category_id=ocr_result.category_id,
+            user_category_id=ocr_result.user_category_id,
+            category_name=category
         )
             
     except HTTPException as e:

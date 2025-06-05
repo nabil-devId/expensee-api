@@ -151,6 +151,25 @@ async def create_budget(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only one of category_id or user_category_id can be provided"
         )
+    
+    # if the budget with the category and same month already in database, throw error
+    query = (
+        select(Budget)
+        .where(
+            Budget.user_id == current_user.user_id,
+            Budget.category_id == budget.category_id,
+            Budget.month == budget.month,
+            Budget.year == budget.year
+        )
+    )
+    result = await db.execute(query)
+    existing_budget = result.scalar_one_or_none()
+    if existing_budget:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Budget already exists for this category and month"
+        )
+    
     category_info = None
     # Validate category_id or user_category_id if provided
     if budget.category_id:
@@ -269,25 +288,24 @@ async def get_budget_detail(
     if not existing_budget:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Budget not found or you don't have permission to view it"
+            detail="Budget not found or you don't have permission to update it"
         )
-    
-    # Get category info for response
-    category_info = None
-    if existing_budget.category_id:
-        category_info = get_category_info(category=existing_budget.category)
-    elif existing_budget.user_category_id:
-        category_info = get_category_info(user_category=existing_budget.user_category)
-    
+    # change month and year to int format
+    month = int(existing_budget.month)
+    year = int(existing_budget.year)
+    budget_spending = await get_budget_with_spending(db, existing_budget, month, year)
     return BudgetUpdateResponse(
-        budget_id=existing_budget.budget_id,
-        amount=existing_budget.amount,
-        month=existing_budget.month,
-        year=existing_budget.year,
-        budget_name=existing_budget.budget_name,
+        budget_id=budget_spending.budget_id,
+        amount=budget_spending.amount,
+        month=budget_spending.month,
+        year=budget_spending.year,
+        budget_name=budget_spending.budget_name,
+        created_at=budget_spending.created_at,
         updated_at=existing_budget.updated_at,
-        created_at=existing_budget.created_at,
-        category=category_info
+        category=budget_spending.category,
+        current_spending=budget_spending.current_spending,
+        remaining=budget_spending.remaining,
+        percentage_used=budget_spending.percentage_used
     )
 
 @router.put("/{budget_id}", response_model=BudgetUpdateResponse)

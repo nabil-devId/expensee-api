@@ -8,7 +8,7 @@ from schemas.token import (
 )
 from schemas.receipt import (
     ReceiptUploadRequest, ReceiptUploadResponse, ReceiptStatusResponse,
-    OCRResultResponse, OCRResultItem
+    OCRResultResponse, OCRResultItemResponse
 )
 from schemas.category import (
     CategoryCreate, CategoryResponse, CategoryListResponse,

@@ -40,6 +40,8 @@ class OCRResult(Base):
     total_amount = Column(Numeric(precision=10, scale=2), nullable=True)
     transaction_date = Column(DateTime, nullable=True)
     payment_method = Column(String, nullable=True)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
+    user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
     receipt_status = Column(Enum(ReceiptStatus), default=ReceiptStatus.PENDING)
     raw_ocr_data = Column(JSONB, nullable=True)  # Original OCR response
     created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
@@ -48,3 +50,5 @@ class OCRResult(Base):
     # Relationships
     user = relationship("User", backref="ocr_results")
     ocr_result_items = relationship("OCRResultItem", back_populates="ocr_result")
+    category = relationship("Category", backref="ocr_results")
+    user_category = relationship("UserCategory", backref="ocr_results")
