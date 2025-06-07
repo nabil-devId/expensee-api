@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.models.receipt import ReceiptStatus
+from schemas.category import CategoryResponse, UserCategoryResponse
 
 
 # Receipt Upload Request and Response
@@ -108,12 +109,10 @@ class OCRFeedbackResponse(BaseModel):
 class OCRResultResponse(OCRResultBase):
     ocr_id: UUID
     items: List[OCRResultItemResponse] = []
-    confidence_scores: Optional[List[OCRConfidenceBase]] = None
     image_url: str
     receipt_status: ReceiptStatus
-    category_id: Optional[UUID]
-    user_category_id: Optional[UUID]
-    category_name: Optional[str]
+    category: Optional[CategoryResponse] = None
+    user_category: Optional[UserCategoryResponse] = None
 
 
 # Accept OCR Results Request

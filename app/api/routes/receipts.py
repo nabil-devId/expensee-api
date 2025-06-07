@@ -379,11 +379,7 @@ async def get_receipt_ocr_results(
         ).options(selectinload(OCRResult.ocr_result_items), selectinload(OCRResult.category), selectinload(OCRResult.user_category))
         result = await db.execute(query)
         ocr_result = result.scalars().first()
-        print(f"Category Name: {ocr_result.ocr_result_items}")
 
-        # print ocr_result to string
-
-        
         if not ocr_result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -406,13 +402,6 @@ async def get_receipt_ocr_results(
                 )
             )
             
-        category = 'General'
-        if ocr_result.category:
-            category = ocr_result.category.name
-        elif ocr_result.user_category:
-            category = ocr_result.user_category.name
-        print("OCR Result Items: ", items)
-            
         return OCRResultResponse(
             ocr_id=ocr_result.ocr_id,
             merchant_name=ocr_result.merchant_name or "Unknown Merchant",
@@ -422,9 +411,8 @@ async def get_receipt_ocr_results(
             items=items,
             image_url=ocr_result.image_path,
             receipt_status=ocr_result.receipt_status,
-            category_id=ocr_result.category_id,
-            user_category_id=ocr_result.user_category_id,
-            category_name=category
+            category=ocr_result.category,
+            user_category=ocr_result.user_category
         )
             
     except HTTPException as e:
