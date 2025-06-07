@@ -58,9 +58,7 @@ class ExpenseHistoryInDB(ExpenseHistoryBase):
 
 class ExpenseHistoryResponse(ExpenseHistoryBase):
     expense_id: UUID
-    has_receipt_image: bool
     created_at: datetime
-    category: str
 
 
 class ExpenseHistoryDetails(ExpenseHistoryBase):

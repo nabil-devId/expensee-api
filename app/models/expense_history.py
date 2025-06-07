@@ -53,6 +53,6 @@ class ExpenseHistory(Base):
 
     # Relationships
     ocr_result = relationship("OCRResult", backref="expense")
-    category = relationship("Category", foreign_keys=[category_id])
-    user_category = relationship("UserCategory", foreign_keys=[user_category_id])
+    category = relationship("Category", foreign_keys=[category_id], lazy="joined", backref="category")
+    user_category = relationship("UserCategory", foreign_keys=[user_category_id], lazy="joined", backref="user_category")
     expense_items = relationship("ExpenseItem", backref="expense_history")

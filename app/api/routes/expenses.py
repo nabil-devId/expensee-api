@@ -19,6 +19,7 @@ from app.models.category import Category
 from app.models.user_category import UserCategory
 from schemas.expense import ExpenseSummary
 from schemas.expense import ExpenseItemBase
+from sqlalchemy.orm import joinedload, selectinload
 import logging
 from schemas.expense import ExpenseHistoryCreate, ExpenseHistoryResponse, PaginationInfo, ExpenseHistoryListResponse, ExpenseHistoryDetails
 logger = logging.getLogger(__name__)
@@ -30,7 +31,6 @@ router = APIRouter()
 async def get_expense_history(
     from_date: Optional[date] = Query(None, description="Filter by start date (YYYY-MM-DD)"),
     to_date: Optional[date] = Query(None, description="Filter by end date (YYYY-MM-DD)"),
-    category: Optional[str] = Query(None, description="Filter by category"),
     merchant: Optional[str] = Query(None, description="Filter by merchant name"),
     min_amount: Optional[float] = Query(None, description="Filter by minimum amount"),
     max_amount: Optional[float] = Query(None, description="Filter by maximum amount"),
@@ -51,10 +51,7 @@ async def get_expense_history(
             
         if to_date:
             query_filters.append(ExpenseHistory.transaction_date <= to_date)
-            
-        if category:
-            query_filters.append(ExpenseHistory.category.ilike(f"%{category}%"))
-            
+
         if merchant:
             query_filters.append(ExpenseHistory.merchant_name.ilike(f"%{merchant}%"))
             
@@ -70,7 +67,7 @@ async def get_expense_history(
         total_count = result.scalar()
         
         # Handle sort order
-        if sort_by not in ["transaction_date", "total_amount", "merchant_name", "category", "created_at"]:
+        if sort_by not in ["transaction_date", "total_amount", "merchant_name","created_at"]:
             sort_by = "transaction_date"  # Default sort
             
         sort_column = getattr(ExpenseHistory, sort_by)
@@ -81,10 +78,7 @@ async def get_expense_history(
             
         # Get paginated expenses
         query = (
-            select(ExpenseHistory, OCRResult.image_path, Category.category_id, UserCategory.user_category_id, Category.name.label("category_name"), UserCategory.name.label("user_category_name"))
-            .outerjoin(OCRResult, ExpenseHistory.ocr_id == OCRResult.ocr_id)
-            .outerjoin(Category, Category.category_id == ExpenseHistory.category_id)
-            .outerjoin(UserCategory, UserCategory.user_category_id == ExpenseHistory.user_category_id)
+            select(ExpenseHistory)
             .where(and_(*query_filters))
             .order_by(sort_column)
             .offset((page - 1) * limit)
@@ -92,23 +86,21 @@ async def get_expense_history(
         )
         
         result = await db.execute(query)
-        expense_records = result.all()
+        expense_records = result.scalars().all()
         
         # Format response
         expenses = []
-        for expense, image_path, category_name, user_category_name, user_category_id, category_id in expense_records:
+        for expense in expense_records:
             expenses.append(
                 ExpenseHistoryResponse(
                     expense_id=expense.expense_id,
                     merchant_name=expense.merchant_name,
                     total_amount=expense.total_amount,
                     transaction_date=expense.transaction_date,
-                    category=category_name if category_name else user_category_name,
-                    category_id=category_id,
-                    user_category_id=user_category_id,
+                    category_id=expense.category_id,
+                    user_category_id=expense.user_category_id,
                     payment_method=expense.payment_method,
                     notes=expense.notes,
-                    has_receipt_image=image_path is not None,
                     created_at=expense.created_at
                 )
             )
