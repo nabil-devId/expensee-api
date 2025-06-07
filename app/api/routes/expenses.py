@@ -215,8 +215,8 @@ async def get_expense_detail(
         
         # Get expense items if they exist
         items = []
-        if expense.ocr_id:
-            query = select(ExpenseItem).where(ExpenseItem.ocr_id == expense.ocr_id)
+        if expense.expense_id:
+            query = select(ExpenseItem).where(ExpenseItem.expense_history_id == expense.expense_id)
             result = await db.execute(query)
             expense_items = result.scalars().all()
             
@@ -318,7 +318,7 @@ async def create_expense(
                         "message": "User category not found or not accessible"
                     }
                 )
-
+        
         expense_history = ExpenseHistory(
             user_id=current_user.user_id,
             ocr_id=None,
@@ -332,6 +332,23 @@ async def create_expense(
             is_manual_entry=True
         )
         db.add(expense_history)
+        await db.commit()
+        await db.refresh(expense_history)
+
+        items = []
+
+        for item in expense.items:
+            expense_item = ExpenseItem(
+                user_id=current_user.user_id,
+                name=item.name,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+                purchase_date=expense.transaction_date,
+                expense_history_id=expense_history.expense_id
+            )
+            items.append(expense_item)
+        db.add_all(items)
         await db.commit()
         await db.refresh(expense_history)
         return None

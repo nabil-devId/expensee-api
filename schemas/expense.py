@@ -15,12 +15,11 @@ class ExpenseItemBase(BaseModel):
 
 
 class ExpenseItemCreate(ExpenseItemBase):
-    ocr_id: UUID
+    pass
 
 
 class ExpenseItemInDB(ExpenseItemBase):
     item_id: UUID
-    ocr_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -41,6 +40,7 @@ class ExpenseHistoryBase(BaseModel):
 
 class ExpenseHistoryCreate(ExpenseHistoryBase):
     is_manual_entry: bool = True
+    items: List[ExpenseItemCreate] = []
 
 
 class ExpenseHistoryInDB(ExpenseHistoryBase):
