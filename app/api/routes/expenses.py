@@ -350,8 +350,8 @@ async def create_expense(
             items.append(expense_item)
         db.add_all(items)
         await db.commit()
-        await db.refresh(expense_history)
-        return None
+        await db.refresh(expense_item)
+        return expense_history
     except HTTPException as e:
         logger.error(f"HTTP exception in create_expense: {str(e)}")
         raise e
