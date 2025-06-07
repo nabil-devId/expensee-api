@@ -331,10 +331,6 @@ async def create_expense(
             notes=expense.notes,
             is_manual_entry=True
         )
-        db.add(expense_history)
-        await db.commit()
-        await db.refresh(expense_history)
-
         items = []
 
         for item in expense.items:
@@ -348,9 +344,12 @@ async def create_expense(
                 expense_history_id=expense_history.expense_id
             )
             items.append(expense_item)
-        db.add_all(items)
+        expense_history.expense_items = items
+
+        db.add(expense_history)
         await db.commit()
-        await db.refresh(expense_item)
+        await db.refresh(expense_history)
+
         return expense_history
     except HTTPException as e:
         logger.error(f"HTTP exception in create_expense: {str(e)}")
