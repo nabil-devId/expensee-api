@@ -1,11 +1,8 @@
 import logging
 from typing import Any, Dict
 from google.genai import types
-import base64
-logger = logging.getLogger(__name__)
 
-# To run this code you need to install the following dependencies:
-# pip install google-genai
+logger = logging.getLogger(__name__)
 
 import io
 import os
@@ -14,33 +11,66 @@ import datetime
 import json
 from PIL import Image
 from typing import List
-# Removing cv2 import as it's not used and causes issues in Cloud Run
+
 from google import genai
 from schemas.receipt import OCRResultCategory
 
-def process_receipt_with_gemini(files, type) -> Dict[str, Any]:
-    client = genai.Client(
-        api_key="AIzaSyAt6WqfZj4nsajkWVH7cpSiTAVGHpDLbhY",
-    )
-    # model = "gemini-2.0-flash"
-    model = "gemini-2.0-flash-lite"
-    
-    # Preprocess image if it's an image type
-    if type.startswith('image/'):
-        processed_data = preprocess_image(files, save_images=True)
-    else:
-        processed_data = files
+from .gcs import GCSUploader  # Import GCSUploader
 
-    # convert file to base64
-    processed_data = base64.b64encode(processed_data).decode('utf-8')
-    
-    # Create parts using the binary data
-    file_part = types.Part(
-        inline_data=types.Blob(
-            mime_type=type,
-            data=processed_data,
-        )
+# --- Configuration for GCS and Gemini ---
+# These values are loaded from environment variables.
+# Ensure GCS_PREPROCESSED_IMAGE_BUCKET and GEMINI_API_KEY are set in your deployment environment.
+
+GCS_BUCKET_NAME = "expense_ocr_receipt"
+GEMINI_API_KEY = "AIzaSyAt6WqfZj4nsajkWVH7cpSiTAVGHpDLbhY"
+
+# Initial check at module load time. Functions using these will also check and raise errors if missing.
+if not GCS_BUCKET_NAME:
+    logger.warning(
+        "GCS_PREPROCESSED_IMAGE_BUCKET environment variable is not set at module load time. "
+        "Image preprocessing and GCS-dependent functions might fail if not configured at runtime."
     )
+
+if not GEMINI_API_KEY:
+    logger.warning(
+        "GEMINI_API_KEY environment variable is not set at module load time. "
+        "Gemini API calls will fail if not configured at runtime."
+    )
+
+# --- End Configuration ---
+
+def process_receipt_with_gemini(files: bytes, file_type: str) -> Dict[str, Any]:
+    """Processes a receipt image (optionally fetching from GCS after preprocessing)
+       and extracts information using Gemini.
+    """
+    if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY is not configured.")
+        raise ValueError("GEMINI_API_KEY environment variable not set.")
+    if not GCS_BUCKET_NAME:
+        logger.error("GCS_BUCKET_NAME is not configured for GCSUploader.")
+        raise ValueError("GCS_BUCKET_NAME is not configured.")
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    model = "gemini-2.0-flash-lite"  # Using a generally available model, adjust if needed. Original was gemini-2.0-flash-lite
+    
+    gcs_uploader = GCSUploader(bucket_name=GCS_BUCKET_NAME)
+    image_bytes_for_gemini: bytes
+    mime_type_for_gemini_part: str
+
+    if file_type.startswith('image/'):
+        logger.info(f"Preprocessing image of type: {file_type}")
+        # preprocess_image uploads to GCS and returns GCS URI
+        processed_image_gcs_uri = preprocess_image(files)
+        logger.info(f"Processed image available at GCS URI: {processed_image_gcs_uri}")
+        # Download the processed image bytes from GCS
+        image_bytes_for_gemini = gcs_uploader.download_bytes_from_uri(processed_image_gcs_uri)
+        mime_type_for_gemini_part = "image/png"  # preprocess_image standardizes to PNG
+    else:
+        # If not an image, use the original files (bytes) directly.
+        # This path might need specific handling if non-image types are not intended for this Gemini prompt.
+        logger.info(f"Processing non-image file of type: {file_type}")
+        image_bytes_for_gemini = files
+        mime_type_for_gemini_part = file_type
 
     json_schema = """
     {
@@ -69,23 +99,21 @@ def process_receipt_with_gemini(files, type) -> Dict[str, Any]:
     }
 """
     
+    prompt_text = f"""Extract receipt to JSON:
+                {json_schema}
+                Rules: Use integers for money. transaction_date must formatted YYYY-MM-DD dates, if the data doesnt complete date, make it with yours. Keep capitalization. Skip empty fields. JSON only. merchant name is required, find for this pattern "nama merchant", the total usually using this pattern "total", "grand total", or "total amount". The date usually using this pattern "tanggal" or "date". The time usually using this pattern "jam" or "time". The cashier usually using this pattern "kasir" or "cashier". The item name usually using this pattern "menu" or "item name". The item price usually using this pattern "harga" or "price". The item quantity usually using this pattern "qty" or "quantity". The payment method usually using this pattern "payment method" or "payment type". The payment amount usually using this pattern "amount" or "total amount" and it should be not less than 100.
+                the "total_amount" should be sum of all items price, if the the "total_amount" and sum of all items price doesnt match, try to re-read or recalculate the items price.
+                """
+
     contents = [
         types.Content(
             role="user",
             parts=[
-                # file_part,
-
                 types.Part.from_bytes(
-                    mime_type="image/jpeg",
-                    data=processed_data,
+                    mime_type=mime_type_for_gemini_part,
+                    data=image_bytes_for_gemini,
                 ),
-                # make this content text trimmed
-
-                types.Part(text=f"""Extract receipt to JSON:
-                ${json_schema}
-                Rules: Use integers for money. transaction_date must formatted YYYY-MM-DD dates, if the data doesnt complete date, make it with yours. Keep capitalization. Skip empty fields. JSON only. merchant name is required, find for this pattern "nama merchant", the total usually using this pattern "total", "grand total", or "total amount". The date usually using this pattern "tanggal" or "date". The time usually using this pattern "jam" or "time". The cashier usually using this pattern "kasir" or "cashier". The item name usually using this pattern "menu" or "item name". The item price usually using this pattern "harga" or "price". The item quantity usually using this pattern "qty" or "quantity". The payment method usually using this pattern "payment method" or "payment type". The payment amount usually using this pattern "amount" or "total amount" and it should be not less than 100.
-                the "total_amount" should be sum of all items price, if the the "total_amount" and sum of all items price doesnt match, try to re-read or recalculate the items price.
-                """),
+                types.Part(text=prompt_text),
             ],
         ),
     ]
@@ -93,36 +121,27 @@ def process_receipt_with_gemini(files, type) -> Dict[str, Any]:
         response_mime_type="text/plain",
     )
 
-    result = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    )
-    total_tokens = result.usage_metadata.total_token_count
-    input_tokens = result.usage_metadata.prompt_token_count
-    output_tokens = result.usage_metadata.candidates_token_count
-    
-    print(f"Total tokens: {total_tokens}")
-    print(f"Input tokens: {input_tokens}")
-    print(f"Output tokens: {output_tokens}")
-    print(f"Parsed result text: {_parse_response(result.text)}")
-    print(f"Raw result text: {result.text}")
-
-    # return _parse_response(result.text)
-    # convert to dict
-    return _parse_response(result.text)
-
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=generate_content_config,
+        )
+        # Assuming _parse_response handles the actual parsing of response.text to dict
+        # If Gemini is configured for JSON output, response.text might already be a JSON string.
+        return _parse_response(response.text)
+    except Exception as e:
+        logger.error(f"Error calling Gemini API: {e}")
+        # Consider how to handle Gemini API errors, e.g., return a specific error structure or re-raise
+        raise
 
 def _parse_response(response_text):
     try:
         # Remove markdown formatting if present
         clean_text = response_text.replace('```json', '').replace('```', '').strip()
-        
         # Parse JSON
         data = json.loads(clean_text)
-        
         return data
-        
     except Exception as e:
         return {'error': f"Error parsing response: {str(e)}"}
 
@@ -138,10 +157,8 @@ def save_image_to_disk(image_bytes, folder, filename=None):
     """Save image bytes to disk in the specified folder"""
     if filename is None:
         filename = generate_unique_filename()
-    
     # Ensure folder exists
     os.makedirs(folder, exist_ok=True)
-    
     # Save file
     file_path = os.path.join(folder, filename)
     with open(file_path, 'wb') as f:
@@ -150,89 +167,107 @@ def save_image_to_disk(image_bytes, folder, filename=None):
     return file_path
 
 
-def preprocess_image(image_bytes: bytes, save_images=False) -> bytes:
+def preprocess_image(image_bytes: bytes) -> str:
     """
-    Preprocess the image to improve OCR quality
-    
-    Args:
-        image_bytes: Raw image bytes
-        save_images: Whether to save original and preprocessed images
-        
-    Returns:
-        Processed image bytes
-    """
-    try:
-        # Generate a unique filename for this image
-        filename = generate_unique_filename()
-        
-        # Save original image if requested
-        if save_images:
-            original_path = save_image_to_disk(
-                image_bytes, 
-                os.path.join(os.path.dirname(__file__), 'uploads', 'original'),
-                filename
-            )
-            print(f"Original image saved to: {original_path}")
-        
-        # Load image
-        img = Image.open(io.BytesIO(image_bytes))
-        
-        # reduce size by half
-        # make it less than 200kb
-        img = img.resize((img.width // 2, img.height // 2))
-        while True:
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            if buffer.tell() < 400 * 1024:  # Less than 400kb
-                break
-            img = img.resize((img.width // 2, img.height // 2))
-        
-        # Convert to grayscale
-        # img = img.convert('L')
-        
-        # Enhance contrast
-        # enhancer = ImageEnhance.Contrast(img)
-        # img = enhancer.enhance(2.0)
-        
-        # Apply slight sharpening
-        # img = img.filter(ImageFilter.SHARPEN)
-        
-        # Apply noise reduction (Gaussian blur with small radius)
-        # img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-        
-        # # Apply thresholding to make text stand out
-        # img = img.point(lambda x: 0 if x < 128 else 255, '1')
-        
-        # Ensure correct orientation (analyze later if needed)
-        # For now we'll assume the orientation is correct
+    Preprocess the image (resize, ensure <400KB PNG) and upload to GCS.
 
-        # Convert back to bytes
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        processed_bytes = buffer.getvalue()
-        
-        # Save preprocessed image if requested
-        if save_images:
-            preprocessed_path = save_image_to_disk(
-                processed_bytes,
-                os.path.join(os.path.dirname(__file__), 'uploads', 'preprocessed'),
-                filename
+    Args:
+        image_bytes: Raw image bytes.
+
+    Returns:
+        str: The GCS URI of the preprocessed image (e.g., "gs://bucket_name/preprocessed/filename.png").
+
+    Raises:
+        ValueError: If GCS_BUCKET_NAME is not properly configured.
+        Exception: If image processing or GCS upload fails.
+    """
+    # Access GCS_BUCKET_NAME (expected to be a module-level global, configured via env var ideally)
+    # This function relies on GCS_BUCKET_NAME being defined in the module's global scope.
+    try:
+        # Check if GCS_BUCKET_NAME global exists and is not a placeholder or empty
+        if 'GCS_BUCKET_NAME' not in globals() or not GCS_BUCKET_NAME or GCS_BUCKET_NAME == "your-default-fallback-bucket" or GCS_BUCKET_NAME == "your-gcs-bucket-name-for-preprocessed-images":
+            current_gcs_bucket_name = os.environ.get("GCS_PREPROCESSED_IMAGE_BUCKET")
+            if not current_gcs_bucket_name:
+                raise ValueError(
+                    "GCS bucket name is not configured. "
+                    "Set GCS_BUCKET_NAME at module level or GCS_PREPROCESSED_IMAGE_BUCKET environment variable."
+                )
+        else:
+            current_gcs_bucket_name = GCS_BUCKET_NAME
+    except NameError:  # Fallback if GCS_BUCKET_NAME global variable doesn't exist at all
+        current_gcs_bucket_name = os.environ.get("GCS_PREPROCESSED_IMAGE_BUCKET")
+        if not current_gcs_bucket_name:
+            raise ValueError(
+                "GCS_BUCKET_NAME global variable not found and GCS_PREPROCESSED_IMAGE_BUCKET env var is not set."
             )
-            print(f"Preprocessed image saved to: {preprocessed_path}")
+
+    gcs_uploader = GCSUploader(bucket_name=current_gcs_bucket_name)
+
+    try:
+        # Generate a unique .png filename for this image
+        unique_png_filename = generate_unique_filename(extension='.png')
+
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode in ('RGBA', 'LA', 'P'): # Convert to RGB if it has alpha or is palette-based
+            img = img.convert('RGB')
+
+        temp_buffer_check_initial_size = io.BytesIO()
+        img.save(temp_buffer_check_initial_size, format="PNG")
         
-        return processed_bytes
-    
+        img_to_resize = img
+        if temp_buffer_check_initial_size.tell() > 400 * 1024: 
+            try:
+                img_to_resize = img.resize((max(1, img.width // 2), max(1, img.height // 2)), Image.Resampling.LANCZOS)
+            except ValueError:
+                print(f"Warning: Initial image dimensions ({img.width}x{img.height}) too small for halving. Proceeding with original.")
+
+        processed_bytes_buffer = io.BytesIO()
+        while True:
+            processed_bytes_buffer.seek(0)
+            processed_bytes_buffer.truncate()
+            img_to_resize.save(processed_bytes_buffer, format="PNG")
+            
+            current_size_bytes = processed_bytes_buffer.tell()
+            if current_size_bytes <= 400 * 1024:
+                break
+
+            if img_to_resize.width <= 50 or img_to_resize.height <= 50:
+                print(f"Warning: Image resized to {img_to_resize.width}x{img_to_resize.height} ({current_size_bytes // 1024}KB) but still might be over 400KB. Using current state.")
+                break
+            
+            new_width = max(1, img_to_resize.width // 2)
+            new_height = max(1, img_to_resize.height // 2)
+
+            if new_width == img_to_resize.width and new_height == img_to_resize.height:
+                print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height}. Using current state.")
+                break
+            try:
+                img_to_resize = img_to_resize.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            except ValueError:
+                print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height} due to dimensions. Using current state.")
+                break
+        
+        processed_bytes = processed_bytes_buffer.getvalue()
+
+        destination_blob_name = f"preprocessed/{unique_png_filename}"
+        gcs_uri = gcs_uploader.upload_bytes(
+            data=processed_bytes,
+            destination_blob_name=destination_blob_name,
+            content_type="image/png"
+        )
+        print(f"Preprocessed image uploaded to GCS: {gcs_uri}")
+
+        return gcs_uri
+
     except Exception as e:
-        print(f"Error preprocessing image: {str(e)}")
-        # If preprocessing fails, return original image
-        return image_bytes
+        print(f"Error in preprocess_image: {str(e)}")
+        raise
 
 def find_category(expense_history_raw: str, category: List[str]) -> OCRResultCategory:
     client = genai.Client(
         api_key="AIzaSyAt6WqfZj4nsajkWVH7cpSiTAVGHpDLbhY",
     )
     model = "gemini-2.0-flash-lite"
-    # model = "gemini-2.5-flash-preview-04-17"
 
     json_schema = """
     {
@@ -269,15 +304,6 @@ def find_category(expense_history_raw: str, category: List[str]) -> OCRResultCat
         contents=contents,
         config=generate_content_config,
     )
-    total_tokens = result.usage_metadata.total_token_count
-    input_tokens = result.usage_metadata.prompt_token_count
-    output_tokens = result.usage_metadata.candidates_token_count
-
-    print(f"Total tokens for category: {total_tokens}")
-    print(f"Input tokens for category: {input_tokens}")
-    print(f"Output tokens for category: {output_tokens}")
-    print(f"Parsed result text for category: {_parse_response(result.text)}")
-    print(f"Raw result text for category: {result.text}")
     result = _parse_response(result.text)
     # return _parse_response(result.text)
     # convert to dict
@@ -286,6 +312,3 @@ def find_category(expense_history_raw: str, category: List[str]) -> OCRResultCat
         category_name=result['category_name'],
         is_user_category=result['is_user_category'],
     )
-
-
-
