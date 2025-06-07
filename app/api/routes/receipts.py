@@ -576,32 +576,35 @@ async def accept_ocr_results(
             notes=request.notes,
             is_manual_entry=False
         )
-        
-        db.add(expense_history)
-        await db.flush()  # Get the expense_id before committing
-        
-        # Process expense items
-        # First, clear any existing items (if updating)
-        query = select(ExpenseItem).where(ExpenseItem.ocr_id == ocr_id)
-        result = await db.execute(query)
-        existing_items = result.scalars().all()
-        
-        for item in existing_items:
-            await db.delete(item)
-        
+        expense_items = []
         # Add new items
         for item in request.items:
             expense_item = ExpenseItem(
-                ocr_id=ocr_id,
+                user_id=current_user.user_id,
                 name=item.name,
                 quantity=item.quantity,
                 unit_price=item.unit_price,
                 total_price=item.total_price,
-                # category=item.category or request.category  # Use item category or default to expense category
             )
-            db.add(expense_item)
+            expense_items.append(expense_item)
         
-        await db.commit()  # Commit all changes
+        db.add(expense_history) # Add ExpenseHistory to the session
+
+        # Assign the items. If ExpenseHistory.expense_items relationship has appropriate cascade
+        # (e.g., save-update), this will also mark items for addition.
+        expense_history.expense_items = expense_items
+
+        # If cascade is not sufficient to add items to the session automatically,
+        # you might need to explicitly add them:
+        # for item in expense_items:
+        #    db.add(item)
+        # or db.add_all(expense_items)
+
+        await db.commit() # Commit the session
+        await db.refresh(expense_history) # Refresh expense_history
+        # Optionally refresh items if needed
+        # for item in expense_history.expense_items:
+        #     await db.refresh(item)
         
         return AcceptOCRResponse(
             expense_id=expense_history.expense_id,
