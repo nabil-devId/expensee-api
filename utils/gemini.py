@@ -39,7 +39,7 @@ if not GEMINI_API_KEY:
 
 # --- End Configuration ---
 
-def process_receipt_with_gemini(files: bytes, file_type: str) -> Dict[str, Any]:
+def process_receipt_with_gemini(image_bytes_for_gemini: bytes) -> Dict[str, Any]:
     """Processes a receipt image (optionally fetching from GCS after preprocessing)
        and extracts information using Gemini.
     """
@@ -52,25 +52,6 @@ def process_receipt_with_gemini(files: bytes, file_type: str) -> Dict[str, Any]:
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     model = "gemini-2.0-flash-lite"  # Using a generally available model, adjust if needed. Original was gemini-2.0-flash-lite
-    
-    gcs_uploader = GCSUploader(bucket_name=GCS_BUCKET_NAME)
-    image_bytes_for_gemini: bytes
-    mime_type_for_gemini_part: str
-
-    if file_type.startswith('image/'):
-        logger.info(f"Preprocessing image of type: {file_type}")
-        # preprocess_image uploads to GCS and returns GCS URI
-        processed_image_gcs_uri = preprocess_image(files)
-        logger.info(f"Processed image available at GCS URI: {processed_image_gcs_uri}")
-        # Download the processed image bytes from GCS
-        image_bytes_for_gemini = gcs_uploader.download_bytes_from_uri(processed_image_gcs_uri)
-        mime_type_for_gemini_part = "image/png"  # preprocess_image standardizes to PNG
-    else:
-        # If not an image, use the original files (bytes) directly.
-        # This path might need specific handling if non-image types are not intended for this Gemini prompt.
-        logger.info(f"Processing non-image file of type: {file_type}")
-        image_bytes_for_gemini = files
-        mime_type_for_gemini_part = file_type
 
     json_schema = """
     {
@@ -97,7 +78,7 @@ def process_receipt_with_gemini(files: bytes, file_type: str) -> Dict[str, Any]:
             }
         ]
     }
-"""
+    """
     
     prompt_text = f"""Extract receipt to JSON:
                 {json_schema}
@@ -110,7 +91,7 @@ def process_receipt_with_gemini(files: bytes, file_type: str) -> Dict[str, Any]:
             role="user",
             parts=[
                 types.Part.from_bytes(
-                    mime_type=mime_type_for_gemini_part,
+                    mime_type="image/png",
                     data=image_bytes_for_gemini,
                 ),
                 types.Part(text=prompt_text),
@@ -153,36 +134,55 @@ def generate_unique_filename(extension='.png'):
     return f"{timestamp}_{unique_id}{extension}"
 
 
-def save_image_to_disk(image_bytes, folder, filename=None):
-    """Save image bytes to disk in the specified folder"""
-    if filename is None:
-        filename = generate_unique_filename()
-    # Ensure folder exists
-    os.makedirs(folder, exist_ok=True)
-    # Save file
-    file_path = os.path.join(folder, filename)
-    with open(file_path, 'wb') as f:
-        f.write(image_bytes)
+def preprocess_image(image_bytes: bytes) -> bytes:
+    # Generate a unique .png filename for this image
+    unique_png_filename = generate_unique_filename(extension='.png')
+
+    img = Image.open(io.BytesIO(image_bytes))
+    if img.mode in ('RGBA', 'LA', 'P'):  # Convert to RGB if it has alpha or is palette-based
+        img = img.convert('RGB')
+
+    temp_buffer_check_initial_size = io.BytesIO()
+    img.save(temp_buffer_check_initial_size, format="PNG")
     
-    return file_path
+    img_to_resize = img
+    if temp_buffer_check_initial_size.tell() > 400 * 1024: 
+        try:
+            img_to_resize = img.resize((max(1, img.width // 2), max(1, img.height // 2)), Image.Resampling.LANCZOS)
+        except ValueError:
+            print(f"Warning: Initial image dimensions ({img.width}x{img.height}) too small for halving. Proceeding with original.")
+
+    processed_bytes_buffer = io.BytesIO()
+    while True:
+        processed_bytes_buffer.seek(0)
+        processed_bytes_buffer.truncate()
+        img_to_resize.save(processed_bytes_buffer, format="PNG")
+        
+        current_size_bytes = processed_bytes_buffer.tell()
+        if current_size_bytes <= 400 * 1024:
+            break
+
+        if img_to_resize.width <= 50 or img_to_resize.height <= 50:
+            print(f"Warning: Image resized to {img_to_resize.width}x{img_to_resize.height} ({current_size_bytes // 1024}KB) but still might be over 400KB. Using current state.")
+            break
+        
+        new_width = max(1, img_to_resize.width // 2)
+        new_height = max(1, img_to_resize.height // 2)
+
+        if new_width == img_to_resize.width and new_height == img_to_resize.height:
+            print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height}. Using current state.")
+            break
+        try:
+            img_to_resize = img_to_resize.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        except ValueError:
+            print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height} due to dimensions. Using current state.")
+            break
+    
+    processed_bytes = processed_bytes_buffer.getvalue()
+    return processed_bytes
 
 
-def preprocess_image(image_bytes: bytes) -> str:
-    """
-    Preprocess the image (resize, ensure <400KB PNG) and upload to GCS.
-
-    Args:
-        image_bytes: Raw image bytes.
-
-    Returns:
-        str: The GCS URI of the preprocessed image (e.g., "gs://bucket_name/preprocessed/filename.png").
-
-    Raises:
-        ValueError: If GCS_BUCKET_NAME is not properly configured.
-        Exception: If image processing or GCS upload fails.
-    """
-    # Access GCS_BUCKET_NAME (expected to be a module-level global, configured via env var ideally)
-    # This function relies on GCS_BUCKET_NAME being defined in the module's global scope.
+def upload_to_gcs(processed_bytes: bytes) -> str:
     try:
         # Check if GCS_BUCKET_NAME global exists and is not a placeholder or empty
         if 'GCS_BUCKET_NAME' not in globals() or not GCS_BUCKET_NAME or GCS_BUCKET_NAME == "your-default-fallback-bucket" or GCS_BUCKET_NAME == "your-gcs-bucket-name-for-preprocessed-images":
@@ -202,66 +202,111 @@ def preprocess_image(image_bytes: bytes) -> str:
             )
 
     gcs_uploader = GCSUploader(bucket_name=current_gcs_bucket_name)
+    unique_png_filename = generate_unique_filename(extension='.png')
+    destination_blob_name = f"preprocessed/{unique_png_filename}"
+    gcs_uri = gcs_uploader.upload_bytes(
+        data=processed_bytes,
+        destination_blob_name=destination_blob_name,
+        content_type="image/png"
+    )
+    print(f"Preprocessed image uploaded to GCS: {gcs_uri}")
+    return gcs_uri
 
-    try:
-        # Generate a unique .png filename for this image
-        unique_png_filename = generate_unique_filename(extension='.png')
+# def preprocess_image(image_bytes: bytes) -> str:
+#     """
+#     Preprocess the image (resize, ensure <400KB PNG) and upload to GCS.
 
-        img = Image.open(io.BytesIO(image_bytes))
-        if img.mode in ('RGBA', 'LA', 'P'): # Convert to RGB if it has alpha or is palette-based
-            img = img.convert('RGB')
+#     Args:
+#         image_bytes: Raw image bytes.
 
-        temp_buffer_check_initial_size = io.BytesIO()
-        img.save(temp_buffer_check_initial_size, format="PNG")
+#     Returns:
+#         str: The GCS URI of the preprocessed image (e.g., "gs://bucket_name/preprocessed/filename.png").
+
+#     Raises:
+#         ValueError: If GCS_BUCKET_NAME is not properly configured.
+#         Exception: If image processing or GCS upload fails.
+#     """
+#     # Access GCS_BUCKET_NAME (expected to be a module-level global, configured via env var ideally)
+#     # This function relies on GCS_BUCKET_NAME being defined in the module's global scope.
+#     try:
+#         # Check if GCS_BUCKET_NAME global exists and is not a placeholder or empty
+#         if 'GCS_BUCKET_NAME' not in globals() or not GCS_BUCKET_NAME or GCS_BUCKET_NAME == "your-default-fallback-bucket" or GCS_BUCKET_NAME == "your-gcs-bucket-name-for-preprocessed-images":
+#             current_gcs_bucket_name = os.environ.get("GCS_PREPROCESSED_IMAGE_BUCKET")
+#             if not current_gcs_bucket_name:
+#                 raise ValueError(
+#                     "GCS bucket name is not configured. "
+#                     "Set GCS_BUCKET_NAME at module level or GCS_PREPROCESSED_IMAGE_BUCKET environment variable."
+#                 )
+#         else:
+#             current_gcs_bucket_name = GCS_BUCKET_NAME
+#     except NameError:  # Fallback if GCS_BUCKET_NAME global variable doesn't exist at all
+#         current_gcs_bucket_name = os.environ.get("GCS_PREPROCESSED_IMAGE_BUCKET")
+#         if not current_gcs_bucket_name:
+#             raise ValueError(
+#                 "GCS_BUCKET_NAME global variable not found and GCS_PREPROCESSED_IMAGE_BUCKET env var is not set."
+#             )
+
+#     gcs_uploader = GCSUploader(bucket_name=current_gcs_bucket_name)
+
+#     try:
+#         # Generate a unique .png filename for this image
+#         unique_png_filename = generate_unique_filename(extension='.png')
+
+#         img = Image.open(io.BytesIO(image_bytes))
+#         if img.mode in ('RGBA', 'LA', 'P'): # Convert to RGB if it has alpha or is palette-based
+#             img = img.convert('RGB')
+
+#         temp_buffer_check_initial_size = io.BytesIO()
+#         img.save(temp_buffer_check_initial_size, format="PNG")
         
-        img_to_resize = img
-        if temp_buffer_check_initial_size.tell() > 400 * 1024: 
-            try:
-                img_to_resize = img.resize((max(1, img.width // 2), max(1, img.height // 2)), Image.Resampling.LANCZOS)
-            except ValueError:
-                print(f"Warning: Initial image dimensions ({img.width}x{img.height}) too small for halving. Proceeding with original.")
+#         img_to_resize = img
+#         if temp_buffer_check_initial_size.tell() > 400 * 1024: 
+#             try:
+#                 img_to_resize = img.resize((max(1, img.width // 2), max(1, img.height // 2)), Image.Resampling.LANCZOS)
+#             except ValueError:
+#                 print(f"Warning: Initial image dimensions ({img.width}x{img.height}) too small for halving. Proceeding with original.")
 
-        processed_bytes_buffer = io.BytesIO()
-        while True:
-            processed_bytes_buffer.seek(0)
-            processed_bytes_buffer.truncate()
-            img_to_resize.save(processed_bytes_buffer, format="PNG")
+#         processed_bytes_buffer = io.BytesIO()
+#         while True:
+#             processed_bytes_buffer.seek(0)
+#             processed_bytes_buffer.truncate()
+#             img_to_resize.save(processed_bytes_buffer, format="PNG")
             
-            current_size_bytes = processed_bytes_buffer.tell()
-            if current_size_bytes <= 400 * 1024:
-                break
+#             current_size_bytes = processed_bytes_buffer.tell()
+#             if current_size_bytes <= 400 * 1024:
+#                 break
 
-            if img_to_resize.width <= 50 or img_to_resize.height <= 50:
-                print(f"Warning: Image resized to {img_to_resize.width}x{img_to_resize.height} ({current_size_bytes // 1024}KB) but still might be over 400KB. Using current state.")
-                break
+#             if img_to_resize.width <= 50 or img_to_resize.height <= 50:
+#                 print(f"Warning: Image resized to {img_to_resize.width}x{img_to_resize.height} ({current_size_bytes // 1024}KB) but still might be over 400KB. Using current state.")
+#                 break
             
-            new_width = max(1, img_to_resize.width // 2)
-            new_height = max(1, img_to_resize.height // 2)
+#             new_width = max(1, img_to_resize.width // 2)
+#             new_height = max(1, img_to_resize.height // 2)
 
-            if new_width == img_to_resize.width and new_height == img_to_resize.height:
-                print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height}. Using current state.")
-                break
-            try:
-                img_to_resize = img_to_resize.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            except ValueError:
-                print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height} due to dimensions. Using current state.")
-                break
+#             if new_width == img_to_resize.width and new_height == img_to_resize.height:
+#                 print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height}. Using current state.")
+#                 break
+#             try:
+#                 img_to_resize = img_to_resize.resize((new_width, new_height), Image.Resampling.LANCZOS)
+#             except ValueError:
+#                 print(f"Warning: Cannot resize image further from {img_to_resize.width}x{img_to_resize.height} due to dimensions. Using current state.")
+#                 break
         
-        processed_bytes = processed_bytes_buffer.getvalue()
+#         processed_bytes = processed_bytes_buffer.getvalue()
 
-        destination_blob_name = f"preprocessed/{unique_png_filename}"
-        gcs_uri = gcs_uploader.upload_bytes(
-            data=processed_bytes,
-            destination_blob_name=destination_blob_name,
-            content_type="image/png"
-        )
-        print(f"Preprocessed image uploaded to GCS: {gcs_uri}")
+#         destination_blob_name = f"preprocessed/{unique_png_filename}"
+#         gcs_uri = gcs_uploader.upload_bytes(
+#             data=processed_bytes,
+#             destination_blob_name=destination_blob_name,
+#             content_type="image/png"
+#         )
+#         print(f"Preprocessed image uploaded to GCS: {gcs_uri}")
 
-        return gcs_uri
+#         return gcs_uri
 
-    except Exception as e:
-        print(f"Error in preprocess_image: {str(e)}")
-        raise
+    # except Exception as e:
+    #     print(f"Error in preprocess_image: {str(e)}")
+    #     raise
 
 def find_category(expense_history_raw: str, category: List[str]) -> OCRResultCategory:
     client = genai.Client(

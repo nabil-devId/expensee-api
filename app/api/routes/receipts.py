@@ -2,9 +2,7 @@ import uuid
 import logging
 from typing import Optional
 from datetime import datetime
-from schemas import category
-from utils.aws import process_receipt_with_textract, upload_image_to_s3, calculate_ocr_completion_time, fetch_image_from_s3
-from utils.gemini import find_category, process_receipt_with_gemini
+from utils.gemini import find_category, process_receipt_with_gemini, preprocess_image, upload_to_gcs
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -13,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, s
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
 
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
@@ -31,130 +28,11 @@ from app.models.receipt import ReceiptStatus
 from schemas.receipt import (
     ReceiptUploadResponse, ReceiptStatusResponse,
     AcceptOCRRequest, AcceptOCRResponse,
-    OCRConfidenceBase, OCRFeedbackRequest, OCRFeedbackResponse
+    OCRFeedbackRequest, OCRFeedbackResponse
 )
 
 router = APIRouter()
 
-
-@router.post("/upload", response_model=ReceiptUploadResponse, status_code=status.HTTP_202_ACCEPTED)
-async def upload_receipt(
-    file: UploadFile = File(...),
-    user_notes: Optional[str] = Form(None),
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-) -> ReceiptUploadResponse:
-    """Upload a receipt image for OCR processing"""
-    try:
-        # 1. Validate file format
-        allowed_extensions = [".jpg", ".jpeg", ".png", ".pdf"]
-        file_ext = file.filename.lower()[file.filename.rfind("."):] if "." in file.filename else ""
-        
-        if file_ext not in allowed_extensions:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "error",
-                    "error_code": "validation_error",
-                    "message": f"Invalid file format. Allowed formats: {', '.join(allowed_extensions)}"
-                }
-            )
-        
-        # 2. Process the file
-        file_content = await file.read()
-        
-        # 3. Calculate estimated completion time based on image characteristics
-        try:
-            estimated_time = await calculate_ocr_completion_time(file_content)
-            # Ensure we have a valid integer even if something went wrong
-            if estimated_time is None or not isinstance(estimated_time, int) or estimated_time <= 0:
-                estimated_time = 10  # Default fallback
-        except Exception as est_error:
-            logger.error(f"Error calculating estimate time: {str(est_error)}")
-            estimated_time = 10  # Default fallback
-        
-        print(f"Estimated time: {estimated_time} || 1")
-        # 4. Upload to S3
-        s3_url = await upload_image_to_s3(file_content, file.filename)
-        
-        # 5. Create entry in ocr_results table
-        ocr_id = uuid.uuid4()
-        ocr_result = OCRResult(
-            ocr_id=ocr_id,
-            user_id=current_user.user_id,
-            image_path=s3_url,
-            receipt_status=ReceiptStatus.PENDING,
-        )
-        
-        db.add(ocr_result)
-        await db.commit()
-        await db.refresh(ocr_result)
-        
-        # 6. Trigger OCR processing job (asynchronous)
-        # Note: In a real implementation, this would be a background task or queue job
-        # For now, we'll implement a simple synchronous processing to simulate the flow
-        try:
-            # Process the receipt (this would typically be done asynchronously)
-            ocr_data = await process_receipt_with_textract(s3_url)
-            
-            # Update the OCR result with the processed data
-            ocr_result.merchant_name = ocr_data.get('merchant_name')
-            ocr_result.total_amount = ocr_data.get('total_amount')
-            ocr_result.transaction_date = datetime.strptime(ocr_data.get('transaction_date'), '%Y-%m-%d') if ocr_data.get('transaction_date') else None
-            ocr_result.payment_method = ocr_data.get('payment_method')
-            ocr_result.raw_ocr_data = ocr_data.get('raw_response')
-            ocr_result.receipt_status = ReceiptStatus.PROCESSED
-            
-            # Save the updates
-            await db.commit()
-            await db.refresh(ocr_result)
-            
-            # Create expense items based on the OCR result
-            if ocr_data.get('items'):
-                for item_data in ocr_data.get('items'):
-                    expense_item = ExpenseItem(
-                        ocr_id=ocr_id,
-                        name=item_data.get('name', 'Unknown Item'),
-                        quantity=item_data.get('quantity', 1),
-                        unit_price=item_data.get('price', 0),
-                        total_price=item_data.get('total', item_data.get('price', 0) * item_data.get('quantity', 1)),
-                        user_id=current_user.user_id,
-                    )
-                    db.add(expense_item)
-
-        except Exception as e:
-            logger.error(f"Error processing receipt: {str(e)}")
-            # Don't fail the request if OCR processing fails - the user can still get their receipt ID
-        
-        # Return the appropriate response based on the OCR processing status
-        if ocr_result.receipt_status == ReceiptStatus.PROCESSED:
-            return ReceiptUploadResponse(
-                ocr_id=ocr_id,
-                status="complete",
-                message="Receipt processed successfully",
-                estimated_completion_time=None
-            )
-        else:
-            # Ensure estimated_time is never null
-            return ReceiptUploadResponse(
-                ocr_id=ocr_id,
-                status="pending",
-                message="Receipt uploaded and queued for processing",
-                estimated_completion_time=estimated_time if estimated_time is not None else 10
-            )
-        
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "status": "error",
-                "error_code": "server_error",
-                "message": "Error processing receipt",
-                "details": {"error": str(e)}
-            }
-        )
 @router.post("/gemini/upload", response_model=ReceiptUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_receipt_gemini(
     file: UploadFile = File(...),
@@ -181,43 +59,27 @@ async def upload_receipt_gemini(
         # 2. Process the file
         file_content = await file.read()
         
-        # 3. Calculate estimated completion time based on image characteristics
-        # try:
-        #     estimated_time = await calculate_ocr_completion_time(file_content)
-        #     # Ensure we have a valid integer even if something went wrong
-        #     if estimated_time is None or not isinstance(estimated_time, int) or estimated_time <= 0:
-        #         estimated_time = 10  # Default fallback
-        # except Exception as est_error:
-        #     logger.error(f"Error calculating estimate time: {str(est_error)}")
-        #     estimated_time = 10  # Default fallback
-        
-        # print(f"Estimated time: {estimated_time} || 1")
-        # 4. Upload to S3
-        # s3_url = await upload_image_to_s3(file_content, file.filename)
-        
-        # 5. Create entry in ocr_results table
-        ocr_id = uuid.uuid4()
-        ocr_result = OCRResult(
-            ocr_id=ocr_id,
-            user_id=current_user.user_id,
-            image_path="None",
-            receipt_status=ReceiptStatus.PENDING,
-        )
-        
-        db.add(ocr_result)
-        await db.commit()
-        await db.refresh(ocr_result)
-        
-        # 6. Trigger OCR processing job (asynchronous)
-        # Note: In a real implementation, this would be a background task or queue job
-        # For now, we'll implement a simple synchronous processing to simulate the flow
+        # 3. Trigger OCR processing job (for later will asynchronous)
         try:
             # Process the receipt (this would typically be done asynchronously)
-            ocr_data = process_receipt_with_gemini(file_content, file.content_type)
-            
+            preprocessed_image = preprocess_image(file_content)
+            gcs_uri = upload_to_gcs(preprocessed_image)
+            gcs_url = gcs_uri.replace("gs://", "https://storage.googleapis.com/")
+            ocr_data = process_receipt_with_gemini(preprocessed_image)
+
+            ocr_id = uuid.uuid4()
+            ocr_result = OCRResult(
+                ocr_id=ocr_id,
+                user_id=current_user.user_id,
+                image_path=gcs_url,
+                receipt_status=ReceiptStatus.PENDING,
+            )
+            db.add(ocr_result)
+            await db.commit()
+            await db.refresh(ocr_result)
             # Update the OCR result with the processed data
-            ocr_result.merchant_name = ocr_data.get('merchant_name')
-            ocr_result.total_amount = int(ocr_data.get('total_amount').replace('.', ''))
+            ocr_result.merchant_name = ocr_data.get('merchant_name', 'Unknown')
+            ocr_result.total_amount = int(ocr_data.get('total_amount', '0').replace('.', ''))
             ocr_result.transaction_date = datetime.strptime(ocr_data.get('transaction_date'), '%Y-%m-%d') if ocr_data.get('transaction_date') else None
             ocr_result.payment_method = ocr_data.get('payment_method')
 
@@ -248,7 +110,6 @@ async def upload_receipt_gemini(
 
             res = find_category(expense_history_raw=str(ocr_data), category=str(super_final_categories))
 
-            print(f"res_cat: {res}")
             if res.is_user_category is True:
                 ocr_result.user_category_id = res.category_id
             else:
@@ -335,19 +196,6 @@ async def get_receipt_status(
             status=ocr_result.receipt_status.value,
             message=f"Receipt is {ocr_result.receipt_status.value}",
         )
-        
-        # Add estimated time if still processing
-        if ocr_result.receipt_status in [ReceiptStatus.PENDING]:
-            # Get the image to calculate estimated time
-            try:
-                image_bytes = await fetch_image_from_s3(ocr_result.image_path)
-                estimated_time = await calculate_ocr_completion_time(image_bytes)
-                print(f"Estimated time: {estimated_time} || 2")
-                status_response.estimated_completion_time = estimated_time if estimated_time is not None else 10
-            except Exception as e:
-                logger.error(f"Error calculating estimated time: {str(e)}")
-                status_response.estimated_completion_time = 10  # Default fallback
-            
         return status_response
             
     except HTTPException as e:
@@ -588,7 +436,7 @@ async def accept_ocr_results(
             )
             expense_items.append(expense_item)
         
-        db.add(expense_history) # Add ExpenseHistory to the session
+        db.add(expense_history)  # Add ExpenseHistory to the session
 
         # Assign the items. If ExpenseHistory.expense_items relationship has appropriate cascade
         # (e.g., save-update), this will also mark items for addition.
@@ -600,8 +448,8 @@ async def accept_ocr_results(
         #    db.add(item)
         # or db.add_all(expense_items)
 
-        await db.commit() # Commit the session
-        await db.refresh(expense_history) # Refresh expense_history
+        await db.commit()  # Commit the session
+        await db.refresh(expense_history)  # Refresh expense_history
         # Optionally refresh items if needed
         # for item in expense_history.expense_items:
         #     await db.refresh(item)
