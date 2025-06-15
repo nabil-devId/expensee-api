@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any
 import logging
+from jose import JWTError
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -15,7 +16,7 @@ from app.models.user import User, UserStatus
 from app.models.auth_token import AuthToken, TokenType
 from app.models.password_reset import PasswordReset
 from app.utils.email import send_password_reset_email
-from schemas.token import Token, TokenCreate, RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse, ResetPasswordRequest, ResetPasswordResponse
+from schemas.token import Token, RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse, ResetPasswordRequest, ResetPasswordResponse
 from schemas.user import User as UserSchema
 from schemas.user import UserCreate
 
@@ -197,7 +198,7 @@ async def refresh_token(
             "expires_at": access_token_exp
         }
         
-    except security.JWTError:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

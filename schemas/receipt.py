@@ -121,8 +121,8 @@ class AcceptOCRRequest(BaseModel):
     total_amount: Optional[Decimal] = None
     transaction_date: Optional[datetime] = None
     payment_method: Optional[str] = None
-    category_id: Optional[UUID]
-    user_category_id: Optional[UUID]
+    category_id: Optional[UUID] = None
+    user_category_id: Optional[UUID] = None
     items: List[OCRResultItemResponse]
     notes: Optional[str] = None
 

@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 from decimal import Decimal
+from app.models.category import Category
+from schemas.budget import CategoryInfo
 
 
 
@@ -27,20 +29,40 @@ class ExpenseItemInDB(ExpenseItemBase):
         orm_mode = True
         from_attributes = True
         
+class ExpenseCategory(BaseModel):
+    category_id: UUID
+    name: str
+    icon: str
+    color: str
+
+class ExpenseUserCategory(BaseModel):
+    user_category_id: UUID
+    name: str
+    icon: str
+    color: str
+
 # Expense History Schema
 class ExpenseHistoryBase(BaseModel):
     merchant_name: str
     total_amount: Decimal
     transaction_date: datetime
     payment_method: Optional[str] = None
-    category_id: Optional[UUID] = None
-    user_category_id: Optional[UUID] = None
+    category: Optional[ExpenseCategory] = None
+    user_category: Optional[ExpenseUserCategory] = None
     notes: Optional[str] = None
 
 
 class ExpenseHistoryCreate(ExpenseHistoryBase):
     is_manual_entry: bool = True
     items: List[ExpenseItemCreate] = []
+    category_id: Optional[UUID] = None
+    user_category_id: Optional[UUID] = None
+
+class ExpenseHistoryUpdate(ExpenseHistoryBase):
+    is_manual_entry: bool = True
+    items: List[ExpenseItemCreate] = []
+    category_id: Optional[UUID] = None
+    user_category_id: Optional[UUID] = None
 
 
 class ExpenseHistoryInDB(ExpenseHistoryBase):

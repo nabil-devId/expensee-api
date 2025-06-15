@@ -33,3 +33,6 @@ class Category(Base):
 
     # Relationship with budgets
     budgets = relationship("Budget", back_populates="category", primaryjoin="and_(Category.category_id==Budget.category_id)")
+
+    def __str__(self):
+        return f"Category(category_id={self.category_id}, name={self.name}, icon={self.icon}, color={self.color}, created_at={self.created_at}, updated_at={self.updated_at})"

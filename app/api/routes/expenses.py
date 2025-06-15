@@ -19,9 +19,9 @@ from app.models.category import Category
 from app.models.user_category import UserCategory
 from schemas.expense import ExpenseSummary
 from schemas.expense import ExpenseItemBase
-from sqlalchemy.orm import joinedload, selectinload
 import logging
 from schemas.expense import ExpenseHistoryCreate, ExpenseHistoryResponse, PaginationInfo, ExpenseHistoryListResponse, ExpenseHistoryDetails
+from schemas.expense import ExpenseCategory, ExpenseUserCategory, ExpenseHistoryUpdate
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -91,14 +91,15 @@ async def get_expense_history(
         # Format response
         expenses = []
         for expense in expense_records:
+
             expenses.append(
                 ExpenseHistoryResponse(
                     expense_id=expense.expense_id,
                     merchant_name=expense.merchant_name,
                     total_amount=expense.total_amount,
                     transaction_date=expense.transaction_date,
-                    category_id=expense.category_id,
-                    user_category_id=expense.user_category_id,
+                    category=ExpenseCategory(category_id=expense.category.category_id, name=expense.category.name, icon=expense.category.icon, color=expense.category.color) if expense.category else None,
+                    user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name) if expense.user_category else None,
                     payment_method=expense.payment_method,
                     notes=expense.notes,
                     created_at=expense.created_at
@@ -167,6 +168,7 @@ async def get_expense_history(
         )
         
     except Exception as e:
+        logger.error(f"Error retrieving expense history: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -237,7 +239,8 @@ async def get_expense_detail(
             total_amount=expense.total_amount,
             transaction_date=expense.transaction_date,
             payment_method=expense.payment_method,
-            category=category_name or user_category_name,
+            category=ExpenseCategory(category_id=expense.category.category_id, name=expense.category.name, icon=expense.category.icon, color=expense.category.color) if expense.category else None,
+            user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name) if expense.user_category else None,
             notes=expense.notes,
             receipt_image_url=image_url,
             items=items,
@@ -400,7 +403,7 @@ async def drop_expense(
 @router.put("/{expense_id}", status_code=200)
 async def update_expense(
     expense_id: uuid.UUID,
-    expense: ExpenseHistoryCreate,
+    expense: ExpenseHistoryUpdate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> dict:

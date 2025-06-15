@@ -55,4 +55,18 @@ class ExpenseHistory(Base):
     ocr_result = relationship("OCRResult", backref="expense")
     category = relationship("Category", foreign_keys=[category_id], lazy="joined", backref="expense_history")
     user_category = relationship("UserCategory", foreign_keys=[user_category_id], lazy="joined", backref="expense_history")
-    expense_items = relationship("ExpenseItem", backref="expense_history")
+    expense_items = relationship("ExpenseItem", backref="expense_history", cascade="all, delete-orphan")
+
+    def __str__(self):
+        # Determine which category to display
+        category_name = "Uncategorized"
+        if self.category:
+            category_name = str(self.category)
+        elif self.user_category:
+            category_name = str(self.user_category)
+
+        formatted_date = self.transaction_date.strftime('%Y-%m-%d')
+        return (
+            f"Expense of ${self.total_amount} at '{self.merchant_name}' on {formatted_date} "
+            f"[{category_name}]"
+        )
