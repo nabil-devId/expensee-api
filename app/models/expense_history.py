@@ -42,7 +42,7 @@ class ExpenseHistory(Base):
     ocr_id = Column(UUID(as_uuid=True), ForeignKey("ocr_results.ocr_id"), nullable=True)
     merchant_name = Column(String, nullable=False)
     total_amount = Column(Numeric(precision=10, scale=2), nullable=False)
-    transaction_date = Column(DateTime, nullable=False)
+    transaction_date = Column(DateTime(timezone=True), nullable=False)
     payment_method = Column(String, nullable=True)
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
     user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)
