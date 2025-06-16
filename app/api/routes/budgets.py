@@ -16,7 +16,7 @@ from schemas.budget import (
     BudgetCreate, BudgetResponse, BudgetUpdateResponse, 
     BudgetListResponse, BudgetDeleteResponse,
     CategoryInfo,
-    OverallBudget, BudgetWithSpending
+    OverallBudget, BudgetWithSpending, BudgetUpdate
 )
 
 router = APIRouter(tags=["budgets"])
@@ -268,7 +268,7 @@ async def get_budgets(
 
 
 
-@router.get("/{budget_id}", response_model=BudgetUpdateResponse)
+@router.get("/{budget_id}", response_model=BudgetResponse)
 async def get_budget_detail(
     budget_id: UUID,
     current_user: User = Depends(get_current_user),
@@ -294,7 +294,7 @@ async def get_budget_detail(
     month = int(existing_budget.month)
     year = int(existing_budget.year)
     budget_spending = await get_budget_with_spending(db, existing_budget, month, year)
-    return BudgetUpdateResponse(
+    return BudgetResponse(
         budget_id=budget_spending.budget_id,
         amount=budget_spending.amount,
         month=budget_spending.month,
@@ -311,7 +311,7 @@ async def get_budget_detail(
 @router.put("/{budget_id}", response_model=BudgetUpdateResponse)
 async def update_budget(
     budget_id: UUID,
-    budget_update: BudgetCreate,
+    budget_update: BudgetUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -336,8 +336,6 @@ async def update_budget(
     existing_budget.amount = budget_update.amount
     existing_budget.month = budget_update.month
     existing_budget.year = budget_update.year
-    existing_budget.category_id = budget_update.category_id
-    existing_budget.user_category_id = budget_update.user_category_id
     existing_budget.budget_name = budget_update.budget_name
     
     await db.commit()

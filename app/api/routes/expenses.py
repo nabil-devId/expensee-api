@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, desc, asc, and_, exists
-from sqlalchemy.sql.functions import coalesce
+from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
@@ -465,6 +465,8 @@ async def update_expense(
         query = select(ExpenseHistory).where(
             ExpenseHistory.expense_id == expense_id,
             ExpenseHistory.user_id == current_user.user_id
+        ).options(
+            selectinload(ExpenseHistory.expense_items)
         )
         result = await db.execute(query)
         expense_history = result.scalar_one_or_none()
@@ -488,6 +490,19 @@ async def update_expense(
         expense_history.user_category_id = expense.user_category_id or None
         expense_history.notes = expense.notes or expense_history.notes
         expense_history.is_manual_entry = True
+
+        new_items = [
+            ExpenseItem(
+                name=item.name,
+                user_id=current_user.user_id,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+                purchase_date=expense.transaction_date or expense_history.transaction_date
+            ) for item in expense.items
+        ]
+
+        expense_history.expense_items = new_items
 
         await db.commit()
         await db.refresh(expense_history)

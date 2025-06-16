@@ -37,7 +37,7 @@ class BudgetCreate(BudgetBase):
 
 
 class BudgetUpdate(BudgetBase):
-    pass
+    budget_name: str
 
 
 class BudgetResponse(BudgetBase):
@@ -55,7 +55,10 @@ class BudgetWithSpending(BudgetResponse):
     percentage_used: condecimal(decimal_places=2)
 
 
-class BudgetUpdateResponse(BudgetWithSpending):
+class BudgetUpdateResponse(BudgetResponse):
+    updated_at: datetime
+
+class BudgetResponse(BudgetWithSpending):
     updated_at: datetime
 
 class OverallBudget(BaseModel):
