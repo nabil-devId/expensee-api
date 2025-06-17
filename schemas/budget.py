@@ -58,9 +58,6 @@ class BudgetWithSpending(BudgetResponse):
 class BudgetUpdateResponse(BudgetResponse):
     updated_at: datetime
 
-class BudgetResponse(BudgetWithSpending):
-    updated_at: datetime
-
 class OverallBudget(BaseModel):
     amount: condecimal(ge=0, decimal_places=2)
     current_spending: condecimal(decimal_places=2)

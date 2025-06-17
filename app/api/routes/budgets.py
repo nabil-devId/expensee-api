@@ -151,15 +151,22 @@ async def create_budget(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only one of category_id or user_category_id can be provided"
         )
+
+    category_conditions = []
+
+    if budget.category_id is not None:
+        category_conditions.append(Budget.category_id == budget.category_id)
+    if budget.user_category_id is not None:
+        category_conditions.append(Budget.user_category_id == budget.user_category_id)
     
     # if the budget with the category and same month already in database, throw error
     query = (
         select(Budget)
         .where(
             Budget.user_id == current_user.user_id,
-            Budget.category_id == budget.category_id,
             Budget.month == budget.month,
-            Budget.year == budget.year
+            Budget.year == budget.year,
+            *category_conditions
         )
     )
     result = await db.execute(query)
@@ -222,7 +229,7 @@ async def create_budget(
         year=new_budget.year,
         budget_name=new_budget.budget_name,
         created_at=new_budget.created_at,
-        category=category_info
+        category=category_info,
     )
 
 
@@ -268,7 +275,7 @@ async def get_budgets(
 
 
 
-@router.get("/{budget_id}", response_model=BudgetResponse)
+@router.get("/{budget_id}", response_model=BudgetWithSpending)
 async def get_budget_detail(
     budget_id: UUID,
     current_user: User = Depends(get_current_user),
@@ -294,7 +301,7 @@ async def get_budget_detail(
     month = int(existing_budget.month)
     year = int(existing_budget.year)
     budget_spending = await get_budget_with_spending(db, existing_budget, month, year)
-    return BudgetResponse(
+    return BudgetWithSpending(
         budget_id=budget_spending.budget_id,
         amount=budget_spending.amount,
         month=budget_spending.month,
