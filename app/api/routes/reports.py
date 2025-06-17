@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import Dict, List, Optional, Tuple, Union
+import logging
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -32,6 +33,7 @@ from schemas.reports.custom import (
     CustomReportRequest, CustomReport, ReportParameters, ReportSummary,
     GroupedData, DetailedExpense, GroupByType, ExportFormat
 )
+from utils.pdf_utils import generate_monthly_report_pdf
 
 router = APIRouter()
 
@@ -107,19 +109,19 @@ async def get_recurring_expenses(
         # Group by similar amounts (within 10%)
         amount_groups = {}
         
-        for exp_date, amount, category in merchant_expenses:
+        for exp_date, total_amount, category in merchant_expenses:
             matched = False
             
             for group_amount in list(amount_groups.keys()):
                 # If amount is within 10% of a group amount, add it to that group
-                if abs(amount - group_amount) / group_amount <= 0.1:
-                    amount_groups[group_amount].append((exp_date, amount, category))
+                if abs(total_amount - group_amount) / group_amount <= 0.1:
+                    amount_groups[group_amount].append((exp_date, total_amount, category))
                     matched = True
                     break
             
             if not matched:
                 # Create a new group
-                amount_groups[amount] = [(exp_date, amount, category)]
+                amount_groups[total_amount] = [(exp_date, total_amount, category)]
         
         # Find groups with recurring patterns
         for group_amount, expenses in amount_groups.items():
@@ -321,22 +323,8 @@ async def generate_monthly_report(
             select(Budget)
             .where(
                 Budget.user_id == current_user.user_id,
-                or_(
-                    and_(
-                        Budget.start_date <= start_date,
-                        or_(
-                            Budget.end_date.is_(None),
-                            Budget.end_date >= start_date
-                        )
-                    ),
-                    and_(
-                        Budget.start_date <= end_date,
-                        or_(
-                            Budget.end_date.is_(None),
-                            Budget.end_date >= end_date
-                        )
-                    )
-                )
+                Budget.month == month,
+                Budget.year == year
             )
         )
         
@@ -365,7 +353,7 @@ async def generate_monthly_report(
             if str(cat_id) in budget_map:
                 budget = budget_map[str(cat_id)]
                 budget_amount = budget.amount
-                remaining = budget_amount - amount
+                remaining = Decimal(budget_amount) - amount
                 
                 budget_info = CategoryBudgetInfo(
                     amount=budget_amount,
@@ -492,18 +480,22 @@ async def generate_monthly_report(
         if format.lower() == "json":
             return report
         elif format.lower() == "pdf":
-            # In a real implementation, we would generate a PDF here
-            # For now, we'll just return a placeholder
+            pdf_buffer = generate_monthly_report_pdf(report)
             return Response(
-                content="PDF generation not implemented in this version",
-                media_type="text/plain"
+                content=pdf_buffer.read(),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={year}_{month}_report.pdf"}
             )
         else:
             raise HTTPException(status_code=400, detail="Invalid format. Supported formats: json, pdf")
         
     except HTTPException as e:
+        logging.exception("An unhandled error occurred while generating the monthly report.")
+
         raise e
     except Exception as e:
+        logging.exception("An unhandled error occurred while generating the monthly report.")
+
         raise HTTPException(status_code=500, detail=f"Error generating monthly report: {str(e)}")
 
 

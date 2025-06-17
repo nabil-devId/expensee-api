@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import List, Optional, Union
@@ -16,7 +16,7 @@ class MonthlyPeriod(BaseModel):
 class LargestExpense(BaseModel):
     amount: Decimal
     merchant_name: str
-    date: date
+    date: datetime
 
 
 class MonthlySummary(BaseModel):
@@ -51,7 +51,7 @@ class CategoryBreakdown(BaseModel):
 
 
 class DailyExpense(BaseModel):
-    date: date
+    date: datetime
     amount: Decimal
     transaction_count: int
 
