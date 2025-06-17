@@ -51,7 +51,8 @@ def process_receipt_with_gemini(image_bytes_for_gemini: bytes) -> Dict[str, Any]
         raise ValueError("GCS_BUCKET_NAME is not configured.")
 
     client = genai.Client(api_key=GEMINI_API_KEY)
-    model = "gemini-2.0-flash-lite"  # Using a generally available model, adjust if needed. Original was gemini-2.0-flash-lite
+    # model = "gemini-2.0-flash-lite"  # cheapest model
+    model = "gemini-2.5-pro-preview-06-05"
 
     json_schema = """
     {
