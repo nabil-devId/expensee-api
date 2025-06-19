@@ -52,7 +52,7 @@ def process_receipt_with_gemini(image_bytes_for_gemini: bytes) -> Dict[str, Any]
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     # model = "gemini-2.0-flash-lite"  # cheapest model
-    model = "gemini-2.5-pro-preview-06-05"
+    model = "gemini-2.0-flash-lite"
 
     json_schema = """
     {
