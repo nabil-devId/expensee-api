@@ -91,7 +91,7 @@ async def get_expense_history(
         # Format response
         expenses = []
         for expense in expense_records:
-
+            print('expensesrrrr', expense)
             expenses.append(
                 ExpenseHistoryResponse(
                     expense_id=expense.expense_id,
@@ -99,13 +99,15 @@ async def get_expense_history(
                     total_amount=expense.total_amount,
                     transaction_date=expense.transaction_date,
                     category=ExpenseCategory(category_id=expense.category.category_id, name=expense.category.name, icon=expense.category.icon, color=expense.category.color) if expense.category else None,
-                    user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name) if expense.user_category else None,
+                    user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name, icon=expense.user_category.icon, color=expense.user_category.color) if expense.user_category else None,
                     payment_method=expense.payment_method,
                     notes=expense.notes,
                     created_at=expense.created_at
                 )
             )
+        
         # Calculate pagination info
+
         total_pages = (total_count + limit - 1) // limit  # Ceiling division
         pagination = PaginationInfo(
             total_count=total_count,
@@ -149,6 +151,8 @@ async def get_expense_history(
             (category_name or user_category_name or "Uncategorized"): amount
             for category_name, user_category_name, amount in category_records
         }
+
+        print('expense_by_categoryxxxx', expense_by_category)
         
         # Create summary object with defaults for empty results
         # make the 0 after . only 2
