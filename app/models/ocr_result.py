@@ -38,7 +38,7 @@ class OCRResult(Base):
     image_path = Column(String, nullable=False)  # S3 path to receipt image
     merchant_name = Column(String, nullable=True)
     total_amount = Column(Numeric(precision=10, scale=2), nullable=True)
-    transaction_date = Column(DateTime, nullable=True)
+    transaction_date = Column(DateTime(timezone=True), nullable=True)
     payment_method = Column(String, nullable=True)
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.category_id"), nullable=True)
     user_category_id = Column(UUID(as_uuid=True), ForeignKey("user_categories.user_category_id"), nullable=True)

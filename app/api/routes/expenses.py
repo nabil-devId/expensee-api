@@ -244,7 +244,7 @@ async def get_expense_detail(
             transaction_date=expense.transaction_date,
             payment_method=expense.payment_method,
             category=ExpenseCategory(category_id=expense.category.category_id, name=expense.category.name, icon=expense.category.icon, color=expense.category.color) if expense.category else None,
-            user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name) if expense.user_category else None,
+            user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name, icon=expense.user_category.icon, color=expense.user_category.color) if expense.user_category else None,
             notes=expense.notes,
             receipt_image_url=image_url,
             items=items,

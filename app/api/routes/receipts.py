@@ -442,17 +442,8 @@ async def accept_ocr_results(
         # (e.g., save-update), this will also mark items for addition.
         expense_history.expense_items = expense_items
 
-        # If cascade is not sufficient to add items to the session automatically,
-        # you might need to explicitly add them:
-        # for item in expense_items:
-        #    db.add(item)
-        # or db.add_all(expense_items)
-
         await db.commit()  # Commit the session
         await db.refresh(expense_history)  # Refresh expense_history
-        # Optionally refresh items if needed
-        # for item in expense_history.expense_items:
-        #     await db.refresh(item)
         
         return AcceptOCRResponse(
             expense_id=expense_history.expense_id,
