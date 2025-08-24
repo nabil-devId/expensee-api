@@ -22,7 +22,7 @@ from .gcs import GCSUploader  # Import GCSUploader
 # Ensure GCS_PREPROCESSED_IMAGE_BUCKET and GEMINI_API_KEY are set in your deployment environment.
 
 GCS_BUCKET_NAME = "expense_ocr_receipt"
-GEMINI_API_KEY = "AIzaSyAt6WqfZj4nsajkWVH7cpSiTAVGHpDLbhY"
+GEMINI_API_KEY = "USE_YOUR_OWN_KEY"
 
 # Initial check at module load time. Functions using these will also check and raise errors if missing.
 if not GCS_BUCKET_NAME:
