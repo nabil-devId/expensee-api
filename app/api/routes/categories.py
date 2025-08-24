@@ -25,7 +25,7 @@ async def get_categories(
     Get all categories including default categories and user's custom categories.
     """
     # Get default categories
-    result = await db.execute(select(Category).where(Category.is_default == True))
+    result = await db.execute(select(Category))
     default_categories = result.scalars().all()
     
     # Get user's custom categories

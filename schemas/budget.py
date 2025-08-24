@@ -26,32 +26,28 @@ class CategoryInfo(BaseModel):
 
 class BudgetBase(BaseModel):
     amount: condecimal(ge=0, decimal_places=2)
-    period: BudgetPeriod
-    start_date: date
-    end_date: Optional[date] = None
+    month: int
+    year: int
 
 
 class BudgetCreate(BudgetBase):
     category_id: Optional[UUID4] = None
     user_category_id: Optional[UUID4] = None
+    budget_name: str
 
 
 class BudgetUpdate(BudgetBase):
-    pass
+    budget_name: str
 
 
 class BudgetResponse(BudgetBase):
     budget_id: UUID4
     category: Optional[CategoryInfo] = None
+    budget_name: str
     created_at: datetime
 
     class Config:
         from_attributes = True
-
-
-class BudgetUpdateResponse(BudgetResponse):
-    updated_at: datetime
-
 
 class BudgetWithSpending(BudgetResponse):
     current_spending: condecimal(decimal_places=2)
@@ -59,8 +55,10 @@ class BudgetWithSpending(BudgetResponse):
     percentage_used: condecimal(decimal_places=2)
 
 
+class BudgetUpdateResponse(BudgetResponse):
+    updated_at: datetime
+
 class OverallBudget(BaseModel):
-    budget_id: Optional[UUID4] = None
     amount: condecimal(ge=0, decimal_places=2)
     current_spending: condecimal(decimal_places=2)
     remaining: condecimal(decimal_places=2)

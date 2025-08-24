@@ -1,26 +1,28 @@
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, desc, asc, and_, between
+from sqlalchemy import func, desc, asc, and_, exists
+from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import get_current_active_user
 from app.core.db import get_db
 from app.models.user import User
-from app.models.receipt import OCRResult
 from app.models.expense_history import ExpenseHistory
+from app.models.ocr_result import OCRResult
 from app.models.expense_item import ExpenseItem
 from app.models.category import Category
-from app.models.category import UserCategory
-
-from schemas.receipt import (
-    ExpenseHistoryResponse, ExpenseHistoryDetails, ExpenseHistoryListResponse,
-    PaginationInfo, ExpenseSummary, ExpenseItemBase, ErrorResponse
-)
+from app.models.user_category import UserCategory
+from schemas.expense import ExpenseSummary
+from schemas.expense import ExpenseItemBase
+import logging
+from schemas.expense import ExpenseHistoryCreate, ExpenseHistoryResponse, PaginationInfo, ExpenseHistoryListResponse, ExpenseHistoryDetails
+from schemas.expense import ExpenseCategory, ExpenseUserCategory, ExpenseHistoryUpdate
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -29,7 +31,6 @@ router = APIRouter()
 async def get_expense_history(
     from_date: Optional[date] = Query(None, description="Filter by start date (YYYY-MM-DD)"),
     to_date: Optional[date] = Query(None, description="Filter by end date (YYYY-MM-DD)"),
-    category: Optional[str] = Query(None, description="Filter by category"),
     merchant: Optional[str] = Query(None, description="Filter by merchant name"),
     min_amount: Optional[float] = Query(None, description="Filter by minimum amount"),
     max_amount: Optional[float] = Query(None, description="Filter by maximum amount"),
@@ -50,10 +51,7 @@ async def get_expense_history(
             
         if to_date:
             query_filters.append(ExpenseHistory.transaction_date <= to_date)
-            
-        if category:
-            query_filters.append(ExpenseHistory.category.ilike(f"%{category}%"))
-            
+
         if merchant:
             query_filters.append(ExpenseHistory.merchant_name.ilike(f"%{merchant}%"))
             
@@ -69,7 +67,7 @@ async def get_expense_history(
         total_count = result.scalar()
         
         # Handle sort order
-        if sort_by not in ["transaction_date", "total_amount", "merchant_name", "category", "created_at"]:
+        if sort_by not in ["transaction_date", "total_amount", "merchant_name","created_at"]:
             sort_by = "transaction_date"  # Default sort
             
         sort_column = getattr(ExpenseHistory, sort_by)
@@ -80,10 +78,7 @@ async def get_expense_history(
             
         # Get paginated expenses
         query = (
-            select(ExpenseHistory, OCRResult.image_path, Category.name.label("category_name"), UserCategory.name.label("user_category_name"))
-            .outerjoin(OCRResult, ExpenseHistory.ocr_id == OCRResult.ocr_id)
-            .outerjoin(Category, Category.category_id == ExpenseHistory.category_id)
-            .outerjoin(UserCategory, UserCategory.user_category_id == ExpenseHistory.user_category_id)
+            select(ExpenseHistory)
             .where(and_(*query_filters))
             .order_by(sort_column)
             .offset((page - 1) * limit)
@@ -91,25 +86,28 @@ async def get_expense_history(
         )
         
         result = await db.execute(query)
-        expense_records = result.all()
+        expense_records = result.scalars().all()
         
         # Format response
         expenses = []
-        for expense, image_path, category_name, user_category_name in expense_records:
+        for expense in expense_records:
+            print('expensesrrrr', expense)
             expenses.append(
                 ExpenseHistoryResponse(
                     expense_id=expense.expense_id,
                     merchant_name=expense.merchant_name,
                     total_amount=expense.total_amount,
                     transaction_date=expense.transaction_date,
-                    category=category_name if category_name else user_category_name,
+                    category=ExpenseCategory(category_id=expense.category.category_id, name=expense.category.name, icon=expense.category.icon, color=expense.category.color) if expense.category else None,
+                    user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name, icon=expense.user_category.icon, color=expense.user_category.color) if expense.user_category else None,
                     payment_method=expense.payment_method,
                     notes=expense.notes,
-                    has_receipt_image=image_path is not None,
                     created_at=expense.created_at
                 )
             )
+        
         # Calculate pagination info
+
         total_pages = (total_count + limit - 1) // limit  # Ceiling division
         pagination = PaginationInfo(
             total_count=total_count,
@@ -153,8 +151,12 @@ async def get_expense_history(
             (category_name or user_category_name or "Uncategorized"): amount
             for category_name, user_category_name, amount in category_records
         }
+
+        print('expense_by_categoryxxxx', expense_by_category)
         
         # Create summary object with defaults for empty results
+        # make the 0 after . only 2
+
         summary = ExpenseSummary(
             total_expenses=summary_record.total or Decimal("0.0"),
             avg_expense=summary_record.avg or Decimal("0.0"),
@@ -170,6 +172,7 @@ async def get_expense_history(
         )
         
     except Exception as e:
+        logger.error(f"Error retrieving expense history: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -218,8 +221,8 @@ async def get_expense_detail(
         
         # Get expense items if they exist
         items = []
-        if expense.ocr_id:
-            query = select(ExpenseItem).where(ExpenseItem.ocr_id == expense.ocr_id)
+        if expense.expense_id:
+            query = select(ExpenseItem).where(ExpenseItem.expense_history_id == expense.expense_id)
             result = await db.execute(query)
             expense_items = result.scalars().all()
             
@@ -229,7 +232,6 @@ async def get_expense_detail(
                     quantity=item.quantity,
                     unit_price=item.unit_price,
                     total_price=item.total_price,
-                    # category=item.category
                 )
                 for item in expense_items
             ]
@@ -241,7 +243,8 @@ async def get_expense_detail(
             total_amount=expense.total_amount,
             transaction_date=expense.transaction_date,
             payment_method=expense.payment_method,
-            category=category_name or user_category_name,
+            category=ExpenseCategory(category_id=expense.category.category_id, name=expense.category.name, icon=expense.category.icon, color=expense.category.color) if expense.category else None,
+            user_category=ExpenseUserCategory(user_category_id=expense.user_category.user_category_id, name=expense.user_category.name, icon=expense.user_category.icon, color=expense.user_category.color) if expense.user_category else None,
             notes=expense.notes,
             receipt_image_url=image_url,
             items=items,
@@ -262,3 +265,254 @@ async def get_expense_detail(
                 "details": {"error": str(e)}
             }
         )
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=None)
+async def create_expense(
+    expense: ExpenseHistoryCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        # Validate category selection
+        if not expense.category_id and not expense.user_category_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "bad_request",
+                    "message": "Category or user category must be provided",
+                    "details": {"error": "Category or user category is required"}
+                }
+            )
+
+        if expense.category_id and expense.user_category_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "bad_request",
+                    "message": "Choose one, either category or user category",
+                    "details": None
+                }
+            )
+
+        if expense.category_id:
+            result = await db.execute(
+                select(Category).where(Category.category_id == expense.category_id)
+            )
+            if not result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "status": "error",
+                        "error_code": "category_not_found",
+                        "message": "Category not found"
+                    }
+                )
+
+        if expense.user_category_id:
+            result = await db.execute(
+                select(UserCategory).where(
+                    UserCategory.user_category_id == expense.user_category_id,
+                    UserCategory.user_id == current_user.user_id
+                )
+            )
+            if not result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "status": "error",
+                        "error_code": "user_category_not_found",
+                        "message": "User category not found or not accessible"
+                    }
+                )
+        
+        expense_history = ExpenseHistory(
+            user_id=current_user.user_id,
+            ocr_id=None,
+            merchant_name=expense.merchant_name or "Unknown Merchant",
+            total_amount=expense.total_amount or 0,
+            transaction_date=expense.transaction_date or datetime.utcnow(),
+            payment_method=expense.payment_method or "Unknown",
+            category_id=expense.category_id,
+            user_category_id=expense.user_category_id,
+            notes=expense.notes,
+            is_manual_entry=True
+        )
+        items = []
+
+        for item in expense.items:
+            expense_item = ExpenseItem(
+                user_id=current_user.user_id,
+                name=item.name,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+                purchase_date=expense.transaction_date,
+                expense_history_id=expense_history.expense_id
+            )
+            items.append(expense_item)
+        expense_history.expense_items = items
+
+        db.add(expense_history)
+        await db.commit()
+        await db.refresh(expense_history)
+
+        return expense_history
+    except HTTPException as e:
+        logger.error(f"HTTP exception in create_expense: {str(e)}")
+        raise e
+    except Exception as ex:
+        logger.error(f"Error in create_expense: {str(ex)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "status": "error",
+                "error_code": "internal_server_error",
+                "message": "An error occurred while creating the expense"
+            }
+        )
+
+@router.delete("/{expense_id}", status_code=200)
+async def drop_expense(
+    expense_id: uuid.UUID = Path(...),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+) -> None:
+    try:
+        query = select(ExpenseHistory).where(
+            User.user_id == current_user.user_id,
+            ExpenseHistory.expense_id == expense_id
+        )
+        
+        result = await db.execute(query)
+        expense_history = result.scalar_one_or_none()
+
+        if not expense_history:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "bad_request",
+                    "message": "Expense not found"
+                }
+            )
+
+        await db.delete(expense_history)
+        await db.commit()
+        await db.flush()
+        return
+    except Exception as ex:
+        raise ex
+
+@router.put("/{expense_id}", status_code=200)
+async def update_expense(
+    expense_id: uuid.UUID,
+    expense: ExpenseHistoryUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        # Validate category selection
+        if not expense.category_id and not expense.user_category_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "bad_request",
+                    "message": "Category or user category must be provided",
+                    "details": {"error": "Category or user category is required"}
+                }
+            )
+
+        if expense.category_id and expense.user_category_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "error",
+                    "error_code": "bad_request",
+                    "message": "Choose one, either category or user category",
+                    "details": None
+                }
+            )
+
+        if expense.category_id:
+            result = await db.execute(
+                select(Category).where(Category.category_id == expense.category_id)
+            )
+            if not result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "status": "error",
+                        "error_code": "category_not_found",
+                        "message": "Category not found"
+                    }
+                )
+
+        if expense.user_category_id:
+            result = await db.execute(
+                select(UserCategory).where(
+                    UserCategory.user_category_id == expense.user_category_id,
+                    UserCategory.user_id == current_user.user_id
+                )
+            )
+            if not result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "status": "error",
+                        "error_code": "user_category_not_found",
+                        "message": "User category not found or not accessible"
+                    }
+                )
+
+        query = select(ExpenseHistory).where(
+            ExpenseHistory.expense_id == expense_id,
+            ExpenseHistory.user_id == current_user.user_id
+        ).options(
+            selectinload(ExpenseHistory.expense_items)
+        )
+        result = await db.execute(query)
+        expense_history = result.scalar_one_or_none()
+
+        if not expense_history:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "status": "error",
+                    "error_code": "resource_not_found",
+                    "message": "Expense not found"
+                }
+            )
+
+        # Update the fields
+        expense_history.merchant_name = expense.merchant_name or expense_history.merchant_name
+        expense_history.total_amount = expense.total_amount or expense_history.total_amount
+        expense_history.transaction_date = expense.transaction_date or expense_history.transaction_date
+        expense_history.payment_method = expense.payment_method or expense_history.payment_method
+        expense_history.category_id = expense.category_id or None
+        expense_history.user_category_id = expense.user_category_id or None
+        expense_history.notes = expense.notes or expense_history.notes
+        expense_history.is_manual_entry = True
+
+        new_items = [
+            ExpenseItem(
+                name=item.name,
+                user_id=current_user.user_id,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+                purchase_date=expense.transaction_date or expense_history.transaction_date
+            ) for item in expense.items
+        ]
+
+        expense_history.expense_items = new_items
+
+        await db.commit()
+        await db.refresh(expense_history)
+        return {
+            "code": 200,
+            "message": "update successfully"
+        }
+    except Exception as ex:
+        raise ex

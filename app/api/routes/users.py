@@ -28,7 +28,8 @@ async def read_user_me(
     """
     Get current user
     """
-    return current_user
+
+    return UserSchema.model_validate(current_user)
 
 
 @router.get("/profile", response_model=UserProfile)

@@ -1,17 +1,17 @@
 fastapi>=0.95.0
 uvicorn>=0.21.0
+gunicorn>=20.1.0
 python-multipart>=0.0.6
 pydantic>=1.10.7
 sqlalchemy>=2.0.7
 alembic>=1.10.3
 psycopg2-binary>=2.9.5
 asyncpg>=0.27.0
-passlib>=1.7.4
 python-jose[cryptography]>=3.3.0
-bcrypt>=4.0.1
+bcrypt==4.0.1
+passlib==1.7.4
 tenacity>=8.2.2
 python-dotenv>=1.0.0
-boto3>=1.26.114
 pillow>=9.5.0
 httpx>=0.24.0
 pytest>=7.3.1
@@ -20,9 +20,24 @@ pydantic-settings>=2.0.0
 email-validator>=2.0.0
 boto3>=1.28.0
 
-
+# Data processing and export dependencies
+pandas>=2.0.0
+openpyxl>=3.1.2
+xlsxwriter>=3.1.0
+matplotlib>=3.7.1
+reportlab>=4.0.4
 
 # Tesseract OCR dependencies
 pytesseract>=0.3.10
 numpy>=1.24.0
 requests>=2.28.0
+
+
+# Google AI dependencies
+google-generativeai>=0.3.2
+# Removed opencv-python as it's not needed and causes deployment issues
+google-genai
+google-cloud-storage==2.19.0
+
+greenlet
+python-dateutil==2.9.0

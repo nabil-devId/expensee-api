@@ -13,8 +13,15 @@ from app.core.db import get_db
 from app.models.user import User, UserStatus
 from schemas.token import TokenPayload
 
+# Use the server host if available
+token_url = f"{settings.API_V1_PREFIX}/auth/login"
+if settings.SERVER_HOST and not settings.SERVER_HOST.endswith('/'):
+    token_url = f"{settings.SERVER_HOST}{token_url}"
+elif settings.SERVER_HOST:
+    token_url = f"{settings.SERVER_HOST[:-1]}{token_url}"
+
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_PREFIX}/auth/login",
+    tokenUrl=token_url,
     scheme_name="JWT"
 )
 
@@ -29,12 +36,8 @@ async def get_current_user(
         token_data = TokenPayload(**payload)
     except (JWTError, ValidationError):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "status": "error",
-                "error_code": "authentication_failed",
-                "message": "Could not validate credentials"
-            }
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail= "Not authenticated"
         )
     
     result = await db.execute(select(User).where(User.user_id == token_data.sub))
