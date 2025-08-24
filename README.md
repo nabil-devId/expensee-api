@@ -36,8 +36,8 @@ Metode ini paling mudah karena semua layanan (API dan database) akan berjalan di
 Buka terminal Anda dan jalankan perintah berikut:
 
 ```bash
-git clone https://github.com/yourusername/expense-tracker-api.git
-cd expense-tracker-api
+git clone https://github.com/nabil-devId/expensee-api.git
+cd expensee-api
 ```
 
 #### 2. Konfigurasi Environment
