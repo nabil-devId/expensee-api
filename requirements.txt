@@ -40,3 +40,4 @@ google-genai
 google-cloud-storage==2.19.0
 
 greenlet
+python-dateutil==2.9.0

@@ -24,6 +24,7 @@ from app.models.ocr_result_item import OCRResultItem
 from app.models.category import Category
 from app.models.user_category import UserCategory
 from app.models.receipt import ReceiptStatus
+from app.utils.date import parse_with_dateutil
 
 from schemas.receipt import (
     ReceiptUploadResponse, ReceiptStatusResponse,
@@ -80,7 +81,7 @@ async def upload_receipt_gemini(
             # Update the OCR result with the processed data
             ocr_result.merchant_name = ocr_data.get('merchant_name', 'Unknown')
             ocr_result.total_amount = int(ocr_data.get('total_amount', '0').replace('.', ''))
-            ocr_result.transaction_date = datetime.strptime(ocr_data.get('transaction_date'), '%Y-%m-%d') if ocr_data.get('transaction_date') else None
+            ocr_result.transaction_date = parse_with_dateutil(ocr_data.get('transaction_date')) if ocr_data.get('transaction_date') else None
             ocr_result.payment_method = ocr_data.get('payment_method')
 
             ocr_result.receipt_status = ReceiptStatus.PROCESSED
@@ -127,7 +128,7 @@ async def upload_receipt_gemini(
                         name=item_data.get('name', 'Unknown Item'),
                         quantity=item_data.get('quantity', 1),
                         unit_price=int(item_data.get('price', '0').replace('.', '')),
-                        total_price=item_data.get('total', int(item_data.get('price', '0').replace('.', '')) * int(item_data.get('quantity', 1))),
+                        total_price=int(item_data.get('total', int(item_data.get('price', '0').replace('.', '')) * int(item_data.get('quantity', 1)))),
                     )
                     db.add(expense_item)
             
@@ -146,8 +147,8 @@ async def upload_receipt_gemini(
             # Ensure estimated_time is never null
             return ReceiptUploadResponse(
                 ocr_id=ocr_id,
-                status="pending",
-                message="Receipt uploaded and queued for processing"
+                status="rejected",
+                message="Receipt uploaded but error processing"
             )
         
     except HTTPException as e:

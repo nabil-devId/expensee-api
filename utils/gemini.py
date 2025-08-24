@@ -81,10 +81,29 @@ def process_receipt_with_gemini(image_bytes_for_gemini: bytes) -> Dict[str, Any]
     }
     """
     
-    prompt_text = f"""Extract receipt to JSON:
+    prompt_text = f"""
+                Extract receipt to JSON:
                 {json_schema}
-                Rules: Use integers for money. transaction_date must formatted YYYY-MM-DD dates, if the data doesnt complete date, make it with yours. Keep capitalization. Skip empty fields. JSON only. merchant name is required, find for this pattern "nama merchant", the total usually using this pattern "total", "grand total", or "total amount". The date usually using this pattern "tanggal" or "date". The time usually using this pattern "jam" or "time". The cashier usually using this pattern "kasir" or "cashier". The item name usually using this pattern "menu" or "item name". The item price usually using this pattern "harga" or "price". The item quantity usually using this pattern "qty" or "quantity". The payment method usually using this pattern "payment method" or "payment type". The payment amount usually using this pattern "amount" or "total amount" and it should be not less than 100.
-                the "total_amount" should be sum of all items price, if the the "total_amount" and sum of all items price doesnt match, try to re-read or recalculate the items price.
+                Rules:
+                Use integers only for all money values.
+                Skip empty fields.
+                Keep capitalization from the original text.
+                If the transaction date is incomplete, fill in missing parts with today's date.
+                The year in the transaction date usually appears at the end of the date text - check for this pattern.
+                "merchant_name" is required. Look for "nama merchant".
+                "total_amount" must equal the sum of item total prices. If they don't match, re-read or recalculate the items.
+                Ignore "sub total" - only use "total", "grand total", or "total amount".
+                Use these label patterns as guides:
+                "tanggal" or "date" → transaction_date
+                "jam" or "time" → (optional, ignore unless needed)
+                "kasir" or "cashier" → (optional, ignore unless needed)
+                "menu" or "item name" → item name
+                "harga" or "price" → item price
+                "qty" or "quantity" → item quantity
+                "payment method" or "payment type" → payment_method
+                "amount" or "total amount" (if ≥ 100) → total_amount
+                Output JSON only. No explanation or text.
+                VERY IMPORTANT: FOR "number string", it means the value must number but in string format, DO NOT convert it to integer.
                 """
 
     contents = [
