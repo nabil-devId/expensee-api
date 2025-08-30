@@ -21,8 +21,8 @@ from .gcs import GCSUploader  # Import GCSUploader
 # These values are loaded from environment variables.
 # Ensure GCS_PREPROCESSED_IMAGE_BUCKET and GEMINI_API_KEY are set in your deployment environment.
 
-GCS_BUCKET_NAME = "expense_ocr_receipt"
-GEMINI_API_KEY = "AIzaSyAt6WqfZj4nsajkWVH7cpSiTAVGHpDLbhY"
+GCS_BUCKET_NAME = os.getenv("RECEIPT_IMAGES_BUCKET")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Initial check at module load time. Functions using these will also check and raise errors if missing.
 if not GCS_BUCKET_NAME:
